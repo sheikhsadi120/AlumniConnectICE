@@ -1733,5 +1733,14 @@ def health():
     return jsonify({'success': True, 'message': 'ok'})
 
 
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        'success': True,
+        'message': 'AlumniConnect backend is running',
+        'health': '/api/health',
+    })
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=config.DEBUG, port=config.PORT, use_reloader=False)
