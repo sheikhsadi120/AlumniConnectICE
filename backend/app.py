@@ -175,11 +175,16 @@ if config.AUTO_INIT_DB:
     except Exception as e:
         # Keep startup resilient; API endpoints will return DB errors if connectivity is still wrong.
         print(f"[DB INIT] Skipped due to error: {e}")
+else:
+    print('[DB INIT] Disabled by AUTO_INIT_DB or Render localhost DB fallback')
 
-try:
-    ensure_db_migrations()
-except Exception as e:
-    print(f"[DB MIGRATION] Skipped due to error: {e}")
+if config.AUTO_MIGRATE_DB:
+    try:
+        ensure_db_migrations()
+    except Exception as e:
+        print(f"[DB MIGRATION] Skipped due to error: {e}")
+else:
+    print('[DB MIGRATION] Disabled by AUTO_MIGRATE_DB or Render localhost DB fallback')
 
 
 def build_upload_url(filename):
@@ -1705,9 +1710,9 @@ def delete_exist_alumni(alumni_id):
 def get_stats():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0)")
+    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni')")
     total_alumni = cur.fetchone()['cnt']
-    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND user_type='student' AND (is_manually_added IS NULL OR is_manually_added=0)")
+    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND user_type='student'")
     total_students = cur.fetchone()['cnt']
     cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='pending'")
     pending_cnt = cur.fetchone()['cnt']
@@ -1735,11 +1740,7 @@ def health():
 
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({
-        'success': True,
-        'message': 'AlumniConnect backend is running',
-        'health': '/api/health',
-    })
+    return jsonify({'success': True, 'message': 'AlumniConnect backend is running', 'health': '/api/health'})
 
 
 if __name__ == '__main__':

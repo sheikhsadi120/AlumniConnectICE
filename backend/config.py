@@ -74,6 +74,7 @@ DEBUG = _as_bool(os.getenv('DEBUG'), False)
 PORT = _as_int(os.getenv('PORT'), 5000)
 SECRET_KEY = os.getenv('SECRET_KEY', 'change-me-in-production')
 PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
+IS_RENDER = bool(os.getenv('RENDER') or os.getenv('RENDER_SERVICE_ID'))
 
 # CORS
 CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), 'http://localhost:5173')
@@ -94,11 +95,11 @@ SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'AlumniConnect Admin')
 # MySQL configuration
 MYSQL_URL = os.getenv('MYSQL_URL') or os.getenv('DATABASE_URL')
 
-MYSQL_HOST = os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST') or '127.0.0.1'
-MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or 'root'
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or ''
-MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or 'alumniconnect'
-MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT'), 3306)
+MYSQL_HOST = os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST') or os.getenv('DB_HOST') or '127.0.0.1'
+MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or os.getenv('DB_USER') or 'root'
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or os.getenv('DB_PASSWORD') or ''
+MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or os.getenv('DB_NAME') or os.getenv('DATABASE_NAME') or 'alumniconnect'
+MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT') or os.getenv('DB_PORT'), 3306)
 
 _parsed_mysql = _parse_mysql_url(MYSQL_URL)
 if _parsed_mysql:
@@ -109,4 +110,6 @@ if _parsed_mysql:
 	MYSQL_PORT = _parsed_mysql.get('port') or MYSQL_PORT
 
 # Auto-create database/tables from schema.sql on startup
-AUTO_INIT_DB = _as_bool(os.getenv('AUTO_INIT_DB'), True)
+_DB_IS_LOCALHOST = str(MYSQL_HOST).strip().lower() in {'127.0.0.1', 'localhost'}
+AUTO_INIT_DB = _as_bool(os.getenv('AUTO_INIT_DB'), (not IS_RENDER) or (not _DB_IS_LOCALHOST))
+AUTO_MIGRATE_DB = _as_bool(os.getenv('AUTO_MIGRATE_DB'), (not IS_RENDER) or (not _DB_IS_LOCALHOST))
