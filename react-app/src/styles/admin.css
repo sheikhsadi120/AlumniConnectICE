@@ -255,7 +255,7 @@
   width: 100%;
   padding: 9px 0;
 }
-.search-input::placeholder { color: #b89ec9; }
+.search-input::placeholder { color: #7ea0c5; }
 .search-clear {
   background: none;
   border: none;
@@ -690,7 +690,7 @@
 .modal-box input,
 .modal-box textarea {
   padding: 11px 14px;
-  border: 1.5px solid #e0d0f0;
+  border: 1.5px solid #c5dbf5;
   border-radius: 10px;
   font-size: 14px;
   outline: none;

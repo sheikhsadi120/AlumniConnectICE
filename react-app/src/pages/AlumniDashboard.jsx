@@ -13,6 +13,9 @@ import {
   getTrainingAttendees,
   getEnrolledTrainingIds,
   getRegisteredEventIds,
+  getFundRequests,
+  getTransactions,
+  addTransaction,
   getUploadUrl,
 } from '../services/api'
 
@@ -25,6 +28,7 @@ const sidebarItems = [
   { view: 'jobs',         icon: 'fa-briefcase',       label: 'Jobs'         },
   { view: 'trainings',    icon: 'fa-chalkboard-user', label: 'Trainings'    },
   { view: 'membership',   icon: 'fa-id-card',         label: 'Membership'   },
+  { view: 'fund-transaction', icon: 'fa-money-bill-wave', label: 'Fund Transection' },
 ]
 
 const titles = {
@@ -36,6 +40,7 @@ const titles = {
   jobs:         { title: 'Jobs',               sub: 'Browse and post job opportunities'           },
   trainings:    { title: 'Trainings',          sub: 'Available training programs'                 },
   membership:   { title: 'Membership',         sub: 'Your membership details'                    },
+  'fund-transaction': { title: 'Fund Transection', sub: 'Track your fund payments and records'   },
 }
 
 const normalizePastJobs = (jobs = []) => {
@@ -137,6 +142,10 @@ export default function AlumniDashboard() {
   const [jobSubmitting, setJobSubmitting] = useState(false)
   const [jobSubmitMsg, setJobSubmitMsg] = useState('')
   const [jobSearch, setJobSearch] = useState('')
+  const [fundRequests, setFundRequests] = useState([])
+  const [myFundTransactions, setMyFundTransactions] = useState([])
+  const [fundSubmittingFor, setFundSubmittingFor] = useState(null)
+  const [fundFormByRequest, setFundFormByRequest] = useState({})
 
   // Notifications
   const [notifOpen, setNotifOpen] = useState(false)
@@ -153,6 +162,7 @@ export default function AlumniDashboard() {
     getAlumni().then(({ ok, data })    => { if (ok) setAllAlumni(data) }).catch(() => {})
     getStudents().then(({ ok, data })  => { if (ok) setAllStudents(data) }).catch(() => {})
     getJobs().then(({ ok, data })      => { if (ok) setJobs(data) }).catch(() => {})
+    getFundRequests({ status: 'open' }).then(({ ok, data }) => { if (ok) setFundRequests(data) }).catch(() => {})
     if (alumniInfo.id) {
       getEnrolledTrainingIds(alumniInfo.id)
         .then(({ ok, data }) => { if (ok) setEnrolledTrainingIds(data) })
@@ -160,8 +170,65 @@ export default function AlumniDashboard() {
       getRegisteredEventIds(alumniInfo.id)
         .then(({ ok, data }) => { if (ok) setRegisteredEventIds(data) })
         .catch(() => {})
+      getTransactions({ alumni_id: alumniInfo.id })
+        .then(({ ok, data }) => { if (ok) setMyFundTransactions(data) })
+        .catch(() => {})
     }
   }, [])
+
+  const handleFundInputChange = (requestId, key, value) => {
+    setFundFormByRequest(prev => ({
+      ...prev,
+      [requestId]: {
+        payment_method: prev[requestId]?.payment_method || 'bkash',
+        amount: prev[requestId]?.amount || '',
+        payment_reference: prev[requestId]?.payment_reference || '',
+        note: prev[requestId]?.note || '',
+        [key]: value,
+      }
+    }))
+  }
+
+  const handleSubmitFundPayment = async (fr) => {
+    const form = fundFormByRequest[fr.id] || {}
+    if (!form.amount || !form.payment_reference) {
+      alert('Please enter amount and transaction/reference id.')
+      return
+    }
+    setFundSubmittingFor(fr.id)
+    try {
+      const payload = {
+        donor: profile.name,
+        type: 'Donation',
+        amount: Number(form.amount),
+        date: new Date().toISOString().slice(0, 10),
+        note: form.note || `Paid for request: ${fr.title}`,
+        request_id: fr.id,
+        alumni_id: alumniInfo.id || null,
+        payment_method: form.payment_method || 'bkash',
+        payment_reference: form.payment_reference,
+        created_by_role: 'alumni',
+        status: 'paid',
+      }
+      const { ok } = await addTransaction(payload)
+      if (!ok) {
+        alert('Could not submit payment. Please try again.')
+        return
+      }
+
+      const refreshed = await getTransactions({ alumni_id: alumniInfo.id })
+      if (refreshed.ok) setMyFundTransactions(refreshed.data)
+      setFundFormByRequest(prev => ({
+        ...prev,
+        [fr.id]: { payment_method: 'bkash', amount: '', payment_reference: '', note: '' },
+      }))
+      alert('Payment submitted successfully.')
+    } catch (_) {
+      alert('Could not submit payment. Please try again.')
+    } finally {
+      setFundSubmittingFor(null)
+    }
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('alumniUser')
@@ -169,7 +236,7 @@ export default function AlumniDashboard() {
   }
 
   const notifications = useMemo(() => [
-    ...events.map(e   => ({ key: `event-${e.id}`,    id: e.id,   icon: 'fa-calendar-days',   color: '#5f2c82', label: 'Event',    title: e.title,                   meta: e.date    || '' })),
+    ...events.map(e   => ({ key: `event-${e.id}`,    id: e.id,   icon: 'fa-calendar-days',   color: '#0f4ea8', label: 'Event',    title: e.title,                   meta: e.date    || '' })),
     ...jobs.map(j     => ({ key: `job-${j.id}`,      id: j.id,   icon: 'fa-briefcase',        color: '#0066cc', label: 'Job',      title: `${j.title} — ${j.company}`, meta: j.deadline || '' })),
     ...trainings.map(t=> ({ key: `training-${t.id}`, id: t.id,   icon: 'fa-chalkboard-user',  color: '#22a06b', label: 'Training', title: t.title,                   meta: t.date    || '' })),
   ].sort((a, b) => b.id - a.id), [events, jobs, trainings])
@@ -565,7 +632,7 @@ export default function AlumniDashboard() {
 
               {/* Profile quick view */}
               <div className="ad-section-title">
-                <i className="fa-solid fa-user" style={{color:'#a4508b'}}></i> Quick Profile
+                <i className="fa-solid fa-user" style={{color:'#00a3a3'}}></i> Quick Profile
               </div>
               <div className="ad-profile-card">
                 {profile.photo_url
@@ -589,17 +656,17 @@ export default function AlumniDashboard() {
               {/* Upcoming events */}
               <div className="ad-section-title" style={{justifyContent:'space-between',flexWrap:'wrap'}}>
                 <span style={{display:'flex',alignItems:'center',gap:10}}>
-                  <i className="fa-solid fa-calendar-days" style={{color:'#a4508b'}}></i> Upcoming Events
+                  <i className="fa-solid fa-calendar-days" style={{color:'#00a3a3'}}></i> Upcoming Events
                   <span className="ad-badge-count">{events.filter(ev => ev.audience !== 'students').length}</span>
                 </span>
                 <span style={{position:'relative',display:'flex',alignItems:'center'}}>
-                  <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:10,color:'#a4508b',fontSize:13,pointerEvents:'none'}}></i>
+                  <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:10,color:'#00a3a3',fontSize:13,pointerEvents:'none'}}></i>
                   <input
                     type="text"
                     placeholder="Search events…"
                     value={dashEventSearch}
                     onChange={e => setDashEventSearch(e.target.value)}
-                    style={{paddingLeft:30,paddingRight:10,paddingTop:6,paddingBottom:6,border:'1.5px solid #e0d0f0',borderRadius:20,fontSize:13,outline:'none',fontFamily:'Inter,sans-serif',width:180}}
+                    style={{paddingLeft:30,paddingRight:10,paddingTop:6,paddingBottom:6,border:'1.5px solid #c5dbf5',borderRadius:20,fontSize:13,outline:'none',fontFamily:'Inter,sans-serif',width:180}}
                   />
                 </span>
               </div>
@@ -624,9 +691,9 @@ export default function AlumniDashboard() {
               <div style={{textAlign:'center',marginBottom:8}}>
                 <button
                   onClick={() => setActiveView('events')}
-                  style={{background:'none',border:'1.5px solid #a4508b',color:'#a4508b',borderRadius:20,padding:'7px 28px',fontSize:14,fontWeight:600,cursor:'pointer',transition:'0.2s'}}
-                  onMouseOver={e=>{e.currentTarget.style.background='#a4508b';e.currentTarget.style.color='#fff'}}
-                  onMouseOut={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='#a4508b'}}
+                  style={{background:'none',border:'1.5px solid #00a3a3',color:'#00a3a3',borderRadius:20,padding:'7px 28px',fontSize:14,fontWeight:600,cursor:'pointer',transition:'0.2s'}}
+                  onMouseOver={e=>{e.currentTarget.style.background='#00a3a3';e.currentTarget.style.color='#fff'}}
+                  onMouseOut={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='#00a3a3'}}
                 >
                   <i className="fa-solid fa-calendar-days" style={{marginRight:7}}></i>Show More Events
                 </button>
@@ -643,7 +710,7 @@ export default function AlumniDashboard() {
               {/* Header bar */}
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:16,flexWrap:'wrap'}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#5f2c82,#a4508b)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',display:'flex',alignItems:'center',justifyContent:'center'}}>
                     <i className="fa-solid fa-users" style={{color:'white',fontSize:18}}></i>
                   </div>
                   <div>
@@ -654,7 +721,7 @@ export default function AlumniDashboard() {
                   </div>
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:10,background:'white',borderRadius:12,padding:'10px 16px',boxShadow:'0 2px 10px rgba(95,44,130,0.08)',minWidth:260,border:'1.5px solid #f0eaff'}}>
-                  <i className="fa-solid fa-magnifying-glass" style={{color:'#a4508b',fontSize:13,flexShrink:0}}></i>
+                  <i className="fa-solid fa-magnifying-glass" style={{color:'#00a3a3',fontSize:13,flexShrink:0}}></i>
                   <input
                     value={alumniSearch}
                     onChange={e => setAlumniSearch(e.target.value)}
@@ -662,7 +729,7 @@ export default function AlumniDashboard() {
                     style={{border:'none',outline:'none',flex:1,fontSize:13,fontFamily:'Inter,sans-serif',color:'#333',background:'transparent'}}
                   />
                   {alumniSearch && (
-                    <button onClick={() => setAlumniSearch('')} style={{border:'none',background:'#f3eeff',color:'#5f2c82',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',lineHeight:1.4}}>✕</button>
+                    <button onClick={() => setAlumniSearch('')} style={{border:'none',background:'#f3eeff',color:'#0f4ea8',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',lineHeight:1.4}}>✕</button>
                   )}
                 </div>
               </div>
@@ -671,7 +738,7 @@ export default function AlumniDashboard() {
               <div style={{background:'white',borderRadius:18,overflow:'hidden',boxShadow:'0 4px 28px rgba(95,44,130,0.10)',border:'1px solid #ede8f8'}}>
 
                 {/* Head */}
-                <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
+                <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.5px',textAlign:'center'}}>#</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Alumni</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Batch / Session</span>
@@ -708,7 +775,7 @@ export default function AlumniDashboard() {
                     <div style={{display:'flex',alignItems:'center',gap:13,minWidth:0,paddingRight:12}}>
                       <div style={{
                         width:46,height:46,borderRadius:'50%',flexShrink:0,overflow:'hidden',
-                        background:'linear-gradient(135deg,#a4508b,#5f2c82)',
+                        background:'linear-gradient(135deg,#00a3a3,#0f4ea8)',
                         display:'flex',alignItems:'center',justifyContent:'center',
                         fontSize:18,fontWeight:800,color:'white',
                         boxShadow:'0 3px 10px rgba(95,44,130,0.22)',
@@ -720,7 +787,7 @@ export default function AlumniDashboard() {
                       </div>
                       <div style={{minWidth:0}}>
                         <div style={{fontWeight:700,fontSize:14,color:'#1a0035',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',lineHeight:1.3}}>{a.name}</div>
-                        <div style={{fontSize:12,color:'#a4508b',fontWeight:600,marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                        <div style={{fontSize:12,color:'#00a3a3',fontWeight:600,marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                           {[a.designation, a.company].filter(Boolean).join(' · ') || 'ICE Alumni'}
                         </div>
                         <div style={{fontSize:11,color:'#c8b8e0',marginTop:2}}>ID: {a.student_id || '—'}</div>
@@ -731,7 +798,7 @@ export default function AlumniDashboard() {
                     <div style={{paddingRight:12}}>
                       <div style={{display:'inline-flex',alignItems:'center',gap:5,background:'#f0eaff',borderRadius:8,padding:'4px 10px'}}>
                         <i className="fa-solid fa-graduation-cap" style={{color:'#7c3aed',fontSize:10}}></i>
-                        <span style={{fontSize:12,fontWeight:700,color:'#5f2c82'}}>{a.department}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:'#0f4ea8'}}>{a.department}</span>
                       </div>
                       <div style={{fontSize:12,color:'#888',marginTop:5,paddingLeft:1,fontWeight:500}}>{a.session}</div>
                     </div>
@@ -740,13 +807,13 @@ export default function AlumniDashboard() {
                     <div style={{paddingRight:12}}>
                       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
                         <span style={{width:22,height:22,borderRadius:6,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                          <i className="fa-solid fa-envelope" style={{color:'#a4508b',fontSize:10}}></i>
+                          <i className="fa-solid fa-envelope" style={{color:'#00a3a3',fontSize:10}}></i>
                         </span>
                         <span style={{fontSize:12,color:'#444',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.email}</span>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:7}}>
                         <span style={{width:22,height:22,borderRadius:6,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                          <i className="fa-solid fa-phone" style={{color:'#a4508b',fontSize:10}}></i>
+                          <i className="fa-solid fa-phone" style={{color:'#00a3a3',fontSize:10}}></i>
                         </span>
                         <span style={{fontSize:12,color:'#444'}}>{a.phone || '—'}</span>
                       </div>
@@ -758,7 +825,7 @@ export default function AlumniDashboard() {
                         ✔ Active
                       </span>
                       <button style={{
-                        background:'linear-gradient(135deg,#5f2c82,#a4508b)',color:'white',
+                        background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',color:'white',
                         border:'none',borderRadius:20,padding:'6px 14px',
                         fontSize:11,fontWeight:700,cursor:'pointer',
                         display:'flex',alignItems:'center',gap:5,
@@ -775,7 +842,7 @@ export default function AlumniDashboard() {
                 {filtered.length > 0 && (
                   <div style={{background:'#faf8ff',borderTop:'1px solid #ede8f8',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <span style={{fontSize:12,color:'#aaa'}}>
-                      Showing <strong style={{color:'#5f2c82'}}>{filtered.length}</strong> of <strong style={{color:'#5f2c82'}}>{allAlumni.length}</strong> alumni
+                      Showing <strong style={{color:'#0f4ea8'}}>{filtered.length}</strong> of <strong style={{color:'#0f4ea8'}}>{allAlumni.length}</strong> alumni
                     </span>
                     <span style={{fontSize:11,color:'#ccc',letterSpacing:'0.3px'}}>ICE DEPARTMENT · UNIVERSITY OF RAJSHAHI</span>
                   </div>
@@ -804,7 +871,7 @@ export default function AlumniDashboard() {
                   </div>
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:10,background:'white',borderRadius:12,padding:'10px 16px',boxShadow:'0 2px 10px rgba(95,44,130,0.08)',minWidth:260,border:'1.5px solid #f0eaff'}}>
-                  <i className="fa-solid fa-magnifying-glass" style={{color:'#a4508b',fontSize:13,flexShrink:0}}></i>
+                  <i className="fa-solid fa-magnifying-glass" style={{color:'#00a3a3',fontSize:13,flexShrink:0}}></i>
                   <input
                     value={alumniSearch}
                     onChange={e => setAlumniSearch(e.target.value)}
@@ -812,7 +879,7 @@ export default function AlumniDashboard() {
                     style={{border:'none',outline:'none',flex:1,fontSize:13,fontFamily:'Inter,sans-serif',color:'#333',background:'transparent'}}
                   />
                   {alumniSearch && (
-                    <button onClick={() => setAlumniSearch('')} style={{border:'none',background:'#f3eeff',color:'#5f2c82',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',lineHeight:1.4}}>✕</button>
+                    <button onClick={() => setAlumniSearch('')} style={{border:'none',background:'#f3eeff',color:'#0f4ea8',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',lineHeight:1.4}}>✕</button>
                   )}
                 </div>
               </div>
@@ -913,7 +980,7 @@ export default function AlumniDashboard() {
           {activeView === 'profile' && (
             <>
               <div className="ad-section-title">
-                <i className="fa-solid fa-user-circle" style={{color:'#a4508b'}}></i> My Profile
+                <i className="fa-solid fa-user-circle" style={{color:'#00a3a3'}}></i> My Profile
               </div>
               <div className="ad-profile-card big">
                 {profile.photo_url
@@ -957,7 +1024,7 @@ export default function AlumniDashboard() {
                             {profile.linkedin && <a href={profile.linkedin} target="_blank" rel="noreferrer" style={{color:'#0077b5',textDecoration:'none'}}><i className="fa-brands fa-linkedin"></i> LinkedIn</a>}
                             {profile.github   && <a href={profile.github}   target="_blank" rel="noreferrer" style={{color:'#333',textDecoration:'none'}}><i className="fa-brands fa-github"></i> GitHub</a>}
                             {profile.twitter  && <a href={profile.twitter}  target="_blank" rel="noreferrer" style={{color:'#1da1f2',textDecoration:'none'}}><i className="fa-brands fa-twitter"></i> Twitter</a>}
-                            {profile.website  && <a href={profile.website}  target="_blank" rel="noreferrer" style={{color:'#a4508b',textDecoration:'none'}}><i className="fa-solid fa-globe"></i> Website</a>}
+                            {profile.website  && <a href={profile.website}  target="_blank" rel="noreferrer" style={{color:'#00a3a3',textDecoration:'none'}}><i className="fa-solid fa-globe"></i> Website</a>}
                           </strong>
                         </div>
                       )}
@@ -992,7 +1059,7 @@ export default function AlumniDashboard() {
                       <label>Current Job Start Date</label>
                       <input type="date" value={editData.current_job_start_date || ''} onChange={e => setEditData({...editData, current_job_start_date: e.target.value})} />
                     </div>
-                    <div style={{margin:'10px 0 4px',fontWeight:700,fontSize:13,color:'#5f2c82',letterSpacing:'0.3px'}}>Past Job / Experience</div>
+                    <div style={{margin:'10px 0 4px',fontWeight:700,fontSize:13,color:'#0f4ea8',letterSpacing:'0.3px'}}>Past Job / Experience</div>
                     {(editData.past_jobs || []).map((job, idx) => (
                       <div className="ad-exp-item" key={`past-job-${idx}`}>
                         <div className="ad-form-row">
@@ -1079,7 +1146,7 @@ export default function AlumniDashboard() {
                       <label>Extracurricular</label>
                       <input value={editData.extracurricular||''} onChange={e => setEditData({...editData, extracurricular: e.target.value})} placeholder="e.g. Debate Club, Programming Contest…" />
                     </div>
-                    <div style={{margin:'8px 0 4px',fontWeight:700,fontSize:13,color:'#5f2c82',letterSpacing:'0.3px'}}>Social Links</div>
+                    <div style={{margin:'8px 0 4px',fontWeight:700,fontSize:13,color:'#0f4ea8',letterSpacing:'0.3px'}}>Social Links</div>
                     <div className="ad-form-row">
                       <label><i className="fa-brands fa-linkedin" style={{color:'#0077b5'}}></i> LinkedIn</label>
                       <input value={editData.linkedin||''} onChange={e => setEditData({...editData, linkedin: e.target.value})} placeholder="https://linkedin.com/in/username" />
@@ -1093,7 +1160,7 @@ export default function AlumniDashboard() {
                       <input value={editData.twitter||''} onChange={e => setEditData({...editData, twitter: e.target.value})} placeholder="https://twitter.com/username" />
                     </div>
                     <div className="ad-form-row">
-                      <label><i className="fa-solid fa-globe" style={{color:'#a4508b'}}></i> Website</label>
+                      <label><i className="fa-solid fa-globe" style={{color:'#00a3a3'}}></i> Website</label>
                       <input value={editData.website||''} onChange={e => setEditData({...editData, website: e.target.value})} placeholder="https://yourwebsite.com" />
                     </div>
                     <div className="ad-form-actions">
@@ -1110,7 +1177,7 @@ export default function AlumniDashboard() {
           {activeView === 'events' && (
             <>
               <div className="ad-section-title">
-                <i className="fa-solid fa-calendar-days" style={{color:'#a4508b'}}></i>
+                <i className="fa-solid fa-calendar-days" style={{color:'#00a3a3'}}></i>
                 Upcoming Events
                 <span className="ad-badge-count">{events.filter(ev => ev.audience !== 'students').length}</span>
               </div>
@@ -1122,13 +1189,13 @@ export default function AlumniDashboard() {
                     <p className="ad-event-loc"><i className="fa-solid fa-location-dot"></i> {ev.location}</p>
                     <p className="ad-event-desc">{ev.description}</p>
                     {Number(ev.fee) > 0 && (
-                      <p style={{display:'flex',alignItems:'center',gap:6,marginTop:6,fontWeight:700,color:'#5f2c82',fontSize:14}}>
+                      <p style={{display:'flex',alignItems:'center',gap:6,marginTop:6,fontWeight:700,color:'#0f4ea8',fontSize:14}}>
                         <i className="fa-solid fa-bangladeshi-taka-sign"></i> Fee: ৳{Number(ev.fee).toLocaleString()}
                       </p>
                     )}
                     {ev.payment_account && (
                       <p style={{fontSize:12,color:'#888',marginTop:2}}>
-                        <i className="fa-solid fa-building-columns" style={{color:'#a4508b',marginRight:4}}></i>
+                        <i className="fa-solid fa-building-columns" style={{color:'#00a3a3',marginRight:4}}></i>
                         Pay to: <strong style={{color:'#333'}}>{ev.payment_account}</strong>
                       </p>
                     )}
@@ -1156,12 +1223,12 @@ export default function AlumniDashboard() {
             <>
               <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12}}>
                 <div className="ad-section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-chalkboard-user" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-chalkboard-user" style={{color:'#00a3a3'}}></i>
                   Available Trainings
                   <span className="ad-badge-count">{trainings.length}</span>
                 </div>
                 <button onClick={() => { setShowAddTrainModal(true); setAddTrainMsg('') }} style={{
-                  display:'flex', alignItems:'center', gap:8, background:'linear-gradient(135deg,#5f2c82,#a4508b)',
+                  display:'flex', alignItems:'center', gap:8, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',
                   color:'white', border:'none', padding:'10px 20px', borderRadius:12, fontWeight:700,
                   fontSize:14, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 14px rgba(95,44,130,0.3)'
                 }}>
@@ -1184,13 +1251,13 @@ export default function AlumniDashboard() {
                       </div>
                       <p className="ad-seats-text">{tr.enrolled} / {tr.seats} seats filled</p>
                       {Number(tr.fee) > 0 && (
-                        <p style={{display:'flex',alignItems:'center',gap:6,marginTop:6,fontWeight:700,color:'#5f2c82',fontSize:13}}>
+                        <p style={{display:'flex',alignItems:'center',gap:6,marginTop:6,fontWeight:700,color:'#0f4ea8',fontSize:13}}>
                           <i className="fa-solid fa-bangladeshi-taka-sign"></i> Fee: ৳{Number(tr.fee).toLocaleString()}
                         </p>
                       )}
                       {tr.payment_account && (
                         <p style={{fontSize:12,color:'#888',marginTop:2}}>
-                          <i className="fa-solid fa-building-columns" style={{color:'#a4508b',marginRight:4}}></i>
+                          <i className="fa-solid fa-building-columns" style={{color:'#00a3a3',marginRight:4}}></i>
                           Pay to: <strong style={{color:'#333'}}>{tr.payment_account}</strong>
                         </p>
                       )}
@@ -1209,7 +1276,7 @@ export default function AlumniDashboard() {
                       <button
                         onClick={() => openMyTrainAttendees(tr)}
                         style={{
-                          marginTop:4, background:'#f3eeff', color:'#5f2c82',
+                          marginTop:4, background:'#f3eeff', color:'#0f4ea8',
                           border:'1.5px solid #d4b8f0', borderRadius:10, padding:'8px 16px',
                           fontSize:13, fontWeight:700, cursor:'pointer',
                           fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:6
@@ -1229,23 +1296,23 @@ export default function AlumniDashboard() {
             <>
               <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12}}>
                 <div className="ad-section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-briefcase" style={{color:'#00a3a3'}}></i>
                   Job Opportunities
                   <span className="ad-badge-count">{jobs.length}</span>
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                   <span style={{position:'relative',display:'flex',alignItems:'center'}}>
-                    <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:10,color:'#a4508b',fontSize:13,pointerEvents:'none'}}></i>
+                    <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:10,color:'#00a3a3',fontSize:13,pointerEvents:'none'}}></i>
                     <input
                       type="text"
                       placeholder="Search by title or company…"
                       value={jobSearch}
                       onChange={e => setJobSearch(e.target.value)}
-                      style={{paddingLeft:30,paddingRight:10,paddingTop:7,paddingBottom:7,border:'1.5px solid #e0d0f0',borderRadius:20,fontSize:13,outline:'none',fontFamily:'Inter,sans-serif',width:210}}
+                      style={{paddingLeft:30,paddingRight:10,paddingTop:7,paddingBottom:7,border:'1.5px solid #c5dbf5',borderRadius:20,fontSize:13,outline:'none',fontFamily:'Inter,sans-serif',width:210}}
                     />
                   </span>
                 <button onClick={() => { setShowJobModal(true); setJobSubmitMsg('') }} style={{
-                  display:'flex', alignItems:'center', gap:8, background:'linear-gradient(135deg,#5f2c82,#a4508b)',
+                  display:'flex', alignItems:'center', gap:8, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',
                   color:'white', border:'none', padding:'10px 20px', borderRadius:12, fontWeight:700,
                   fontSize:14, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 14px rgba(95,44,130,0.3)'
                 }}>
@@ -1267,7 +1334,7 @@ export default function AlumniDashboard() {
                       border:'1.5px solid #ece4f8', overflow:'hidden', display:'flex', flexDirection:'column'
                     }}>
                       {/* Card top bar */}
-                      <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', padding:'16px 20px'}}>
+                      <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', padding:'16px 20px'}}>
                         <div style={{color:'white', fontWeight:800, fontSize:16, marginBottom:4}}>{job.title}</div>
                         <div style={{color:'rgba(255,255,255,0.8)', fontSize:13, display:'flex', alignItems:'center', gap:8}}>
                           <i className="fa-solid fa-building"></i> {job.company || '—'}
@@ -1277,7 +1344,7 @@ export default function AlumniDashboard() {
                       {/* Details */}
                       <div style={{padding:'14px 20px', flex:1, display:'flex', flexDirection:'column', gap:8}}>
                         <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:4}}>
-                          <span style={{background:'#f3eeff', color:'#5f2c82', borderRadius:20, padding:'3px 12px', fontSize:12, fontWeight:600}}>
+                          <span style={{background:'#f3eeff', color:'#0f4ea8', borderRadius:20, padding:'3px 12px', fontSize:12, fontWeight:600}}>
                             {job.type}
                           </span>
                           {job.location && (
@@ -1303,7 +1370,7 @@ export default function AlumniDashboard() {
                           {job.apply_link ? (
                             <a href={job.apply_link} target="_blank" rel="noreferrer" style={{
                               display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                              background:'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white',
+                              background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white',
                               borderRadius:10, padding:'9px 18px', textDecoration:'none', fontWeight:700,
                               fontSize:13, fontFamily:'Inter,sans-serif', boxShadow:'0 2px 8px rgba(95,44,130,0.2)'
                             }}>
@@ -1331,7 +1398,7 @@ export default function AlumniDashboard() {
                     background:'white', borderRadius:24, width:'100%', maxWidth:520,
                     maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(95,44,130,0.25)'
                   }}>
-                    <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                    <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
                       <h3 style={{color:'white', margin:0, fontSize:18, fontWeight:800}}>
                         <i className="fa-solid fa-briefcase" style={{marginRight:10}}></i>Post a Job
                       </h3>
@@ -1353,7 +1420,7 @@ export default function AlumniDashboard() {
                           { label:'Deadline', name:'deadline', type:'date' },
                         ].map(f => (
                           <div key={f.name}>
-                            <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
+                            <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
                             <input
                               type={f.type || 'text'}
                               placeholder={f.placeholder}
@@ -1366,7 +1433,7 @@ export default function AlumniDashboard() {
                         ))}
 
                         <div>
-                          <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Job Type</label>
+                          <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Job Type</label>
                           <select value={jobForm.type} onChange={e => setJobForm({...jobForm, type: e.target.value})}
                             style={{width:'100%', padding:'10px 14px', border:'1.5px solid #e0d5f5', borderRadius:10, fontSize:14, outline:'none', fontFamily:'Inter,sans-serif', color:'#333'}}>
                             <option>Full-time</option><option>Part-time</option><option>Remote</option><option>Internship</option>
@@ -1374,7 +1441,7 @@ export default function AlumniDashboard() {
                         </div>
 
                         <div>
-                          <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Application Link / Circular URL</label>
+                          <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Application Link / Circular URL</label>
                           <input
                             type="url"
                             placeholder="https://forms.google.com/… or job portal link"
@@ -1385,7 +1452,7 @@ export default function AlumniDashboard() {
                         </div>
 
                         <div>
-                          <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Job Description</label>
+                          <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Job Description</label>
                           <textarea
                             rows={4}
                             placeholder="Describe the role, responsibilities, requirements…"
@@ -1406,14 +1473,14 @@ export default function AlumniDashboard() {
 
                         <div style={{display:'flex', gap:10, marginTop:4}}>
                           <button type="submit" disabled={jobSubmitting} style={{
-                            flex:1, background:'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white',
+                            flex:1, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white',
                             border:'none', padding:'12px', borderRadius:12, fontWeight:700, fontSize:15,
                             cursor:'pointer', fontFamily:'Inter,sans-serif'
                           }}>
                             {jobSubmitting ? 'Submitting…' : <><i className="fa-solid fa-paper-plane"></i> Submit for Review</>}
                           </button>
                           <button type="button" onClick={() => setShowJobModal(false)} style={{
-                            padding:'12px 20px', background:'#f4f0f8', color:'#5f2c82',
+                            padding:'12px 20px', background:'#edf6ff', color:'#0f4ea8',
                             border:'none', borderRadius:12, fontWeight:600, fontSize:14, cursor:'pointer', fontFamily:'Inter,sans-serif'
                           }}>Cancel</button>
                         </div>
@@ -1429,7 +1496,7 @@ export default function AlumniDashboard() {
           {activeView === 'membership' && (
             <>
               <div className="ad-section-title">
-                <i className="fa-solid fa-id-card" style={{color:'#a4508b'}}></i> Membership Details
+                <i className="fa-solid fa-id-card" style={{color:'#00a3a3'}}></i> Membership Details
               </div>
               <div className="ad-membership-card">
                 <div className="ad-mem-header">
@@ -1465,6 +1532,117 @@ export default function AlumniDashboard() {
             </>
           )}
 
+          {/* ══ FUND TRANSECTION ══ */}
+          {activeView === 'fund-transaction' && (
+            <>
+              <div className="ad-section-title">
+                <i className="fa-solid fa-money-bill-wave" style={{color:'#00a3a3'}}></i> Fund Transection
+              </div>
+              {fundRequests.length === 0 ? (
+                <div className="ad-mem-notice" style={{marginTop: 10}}>
+                  <i className="fa-solid fa-circle-info"></i>
+                  No active fund request right now.
+                </div>
+              ) : (
+                <div className="ad-events-grid" style={{marginBottom:18}}>
+                  {fundRequests.map(fr => {
+                    const form = fundFormByRequest[fr.id] || { payment_method: 'bkash', amount: '', payment_reference: '', note: '' }
+                    return (
+                      <div key={fr.id} className="ad-event-card" style={{paddingBottom:14}}>
+                        <div className="ad-event-date"><i className="fa-solid fa-hand-holding-heart"></i> Request #{fr.id}</div>
+                        <h4>{fr.title}</h4>
+                        <p style={{marginBottom:10}}>{fr.purpose}</p>
+                        <p><strong>Target:</strong> Tk {Number(fr.target_amount || 0).toLocaleString()}</p>
+                        {fr.bkash_number && <p><strong>bKash:</strong> {fr.bkash_number}</p>}
+                        {fr.bank_name && <p><strong>Bank:</strong> {fr.bank_name} ({fr.bank_account_number})</p>}
+
+                        <div style={{display:'grid',gap:8,marginTop:8}}>
+                          <select
+                            value={form.payment_method}
+                            onChange={e => handleFundInputChange(fr.id, 'payment_method', e.target.value)}
+                            style={{padding:'9px 12px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:13,outline:'none',fontFamily:'Inter,sans-serif'}}
+                          >
+                            <option value="bkash">bKash</option>
+                            <option value="bank">Bank</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Amount (Tk)"
+                            value={form.amount}
+                            onChange={e => handleFundInputChange(fr.id, 'amount', e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Transaction / Reference ID"
+                            value={form.payment_reference}
+                            onChange={e => handleFundInputChange(fr.id, 'payment_reference', e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Note (optional)"
+                            value={form.note}
+                            onChange={e => handleFundInputChange(fr.id, 'note', e.target.value)}
+                          />
+                          <button
+                            className="ad-btn-join"
+                            onClick={() => handleSubmitFundPayment(fr)}
+                            disabled={fundSubmittingFor === fr.id}
+                          >
+                            {fundSubmittingFor === fr.id ? 'Submitting...' : 'Submit Payment'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="ad-membership-card">
+                <div className="ad-mem-header">
+                  <div className="ad-mem-icon"><i className="fa-solid fa-receipt"></i></div>
+                  <div>
+                    <h3>My Fund Payment History</h3>
+                    <p>All submitted fund payments are listed here.</p>
+                  </div>
+                </div>
+                {myFundTransactions.length === 0 ? (
+                  <div className="ad-mem-notice" style={{marginTop: 10}}>
+                    <i className="fa-solid fa-circle-info"></i>
+                    No fund transection record yet.
+                  </div>
+                ) : (
+                  <div style={{overflowX:'auto', marginTop:12}}>
+                    <table className="ad-table" style={{minWidth:760}}>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Request</th>
+                          <th>Method</th>
+                          <th>Reference</th>
+                          <th>Amount</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myFundTransactions.map(tx => (
+                          <tr key={tx.id}>
+                            <td>{tx.date || '-'}</td>
+                            <td>{tx.request_title || tx.type || '-'}</td>
+                            <td>{tx.payment_method || '-'}</td>
+                            <td>{tx.payment_reference || '-'}</td>
+                            <td>Tk {Number(tx.amount || 0).toLocaleString()}</td>
+                            <td>{tx.status || 'paid'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
         </div>
       </div>
 
@@ -1479,7 +1657,7 @@ export default function AlumniDashboard() {
             onClick={e => e.stopPropagation()}
           >
             {/* Modal header banner */}
-            <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)',borderRadius:'24px 24px 0 0',padding:'20px 24px 32px',position:'relative'}}>
+            <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',borderRadius:'24px 24px 0 0',padding:'20px 24px 32px',position:'relative'}}>
               <button
                 onClick={() => setSelectedAlumni(null)}
                 style={{position:'absolute',top:12,right:12,background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',color:'white',fontSize:15,display:'flex',alignItems:'center',justifyContent:'center'}}
@@ -1494,7 +1672,7 @@ export default function AlumniDashboard() {
             <div style={{display:'flex',justifyContent:'center',position:'relative',zIndex:2}}>
               <div style={{
                 width:96,height:96,borderRadius:'50%',border:'4px solid white',
-                background:'linear-gradient(135deg,#a4508b,#5f2c82)',
+                background:'linear-gradient(135deg,#00a3a3,#0f4ea8)',
                 display:'flex',alignItems:'center',justifyContent:'center',
                 fontSize:36,fontWeight:800,color:'white',
                 marginTop:-48,overflow:'hidden',boxShadow:'0 6px 24px rgba(95,44,130,0.25)',
@@ -1514,8 +1692,8 @@ export default function AlumniDashboard() {
 
               {/* About */}
               {selectedAlumni.bio && (
-                <div style={{background:'#faf7ff',borderRadius:14,padding:'16px 20px',marginBottom:20,borderLeft:'4px solid #a4508b'}}>
-                  <div style={{fontSize:11,fontWeight:700,color:'#a4508b',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:6}}>About Me</div>
+                <div style={{background:'#faf7ff',borderRadius:14,padding:'16px 20px',marginBottom:20,borderLeft:'4px solid #00a3a3'}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#00a3a3',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:6}}>About Me</div>
                   <p style={{fontSize:14,color:'#444',lineHeight:1.7,margin:0,whiteSpace:'pre-wrap'}}>{selectedAlumni.bio}</p>
                 </div>
               )}
@@ -1532,7 +1710,7 @@ export default function AlumniDashboard() {
               ].filter(r => r.value).map((row, i) => (
                 <div key={i} style={{display:'flex',alignItems:'flex-start',gap:14,padding:'10px 0',borderBottom:'1px solid #f3eeff'}}>
                   <span style={{width:36,height:36,borderRadius:10,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>
-                    <i className={`fa-solid ${row.icon}`} style={{color:'#5f2c82',fontSize:14}}></i>
+                    <i className={`fa-solid ${row.icon}`} style={{color:'#0f4ea8',fontSize:14}}></i>
                   </span>
                   <div>
                     <div style={{fontSize:11,color:'#999',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.4px'}}>{row.label}</div>
@@ -1543,13 +1721,13 @@ export default function AlumniDashboard() {
 
               {Array.isArray(selectedAlumni.past_jobs) && selectedAlumni.past_jobs.length > 0 && (
                 <div style={{marginTop:20}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-                    <i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i> Past Experience
+                  <div style={{fontSize:12,fontWeight:700,color:'#0f4ea8',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-briefcase" style={{color:'#00a3a3'}}></i> Past Experience
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {selectedAlumni.past_jobs.map((job, idx) => (
                       <div key={`${job.id || 'past'}-${idx}`} style={{border:'1px solid #eadcf9',borderRadius:12,padding:'10px 12px',background:'#fbf7ff'}}>
-                        <div style={{fontSize:14,fontWeight:700,color:'#2d0a50'}}>
+                        <div style={{fontSize:14,fontWeight:700,color:'#123b68'}}>
                           {job.designation || 'Role'}{job.company ? ` @ ${job.company}` : ''}
                         </div>
                         <div style={{fontSize:12,color:'#8668a6',marginTop:2}}>
@@ -1564,12 +1742,12 @@ export default function AlumniDashboard() {
               {/* Research Interests */}
               {selectedAlumni.research_interests && (
                 <div style={{marginTop:20}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-                    <i className="fa-solid fa-flask" style={{color:'#a4508b'}}></i> Research Interests
+                  <div style={{fontSize:12,fontWeight:700,color:'#0f4ea8',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-flask" style={{color:'#00a3a3'}}></i> Research Interests
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                     {selectedAlumni.research_interests.split(',').map((item,i) => (
-                      <span key={i} style={{background:'#f3eeff',color:'#5f2c82',borderRadius:20,padding:'4px 14px',fontSize:13,fontWeight:500}}>{item.trim()}</span>
+                      <span key={i} style={{background:'#f3eeff',color:'#0f4ea8',borderRadius:20,padding:'4px 14px',fontSize:13,fontWeight:500}}>{item.trim()}</span>
                     ))}
                   </div>
                 </div>
@@ -1578,8 +1756,8 @@ export default function AlumniDashboard() {
               {/* Extracurricular */}
               {selectedAlumni.extracurricular && (
                 <div style={{marginTop:20}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-                    <i className="fa-solid fa-star" style={{color:'#a4508b'}}></i> Extracurricular Activities
+                  <div style={{fontSize:12,fontWeight:700,color:'#0f4ea8',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-star" style={{color:'#00a3a3'}}></i> Extracurricular Activities
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                     {selectedAlumni.extracurricular.split(',').map((item,i) => (
@@ -1592,8 +1770,8 @@ export default function AlumniDashboard() {
               {/* Social Links */}
               {(selectedAlumni.linkedin || selectedAlumni.github || selectedAlumni.twitter || selectedAlumni.website) && (
                 <div style={{marginTop:20}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-                    <i className="fa-solid fa-share-nodes" style={{color:'#a4508b'}}></i> Connect
+                  <div style={{fontSize:12,fontWeight:700,color:'#0f4ea8',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-share-nodes" style={{color:'#00a3a3'}}></i> Connect
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
                     {selectedAlumni.linkedin && (
@@ -1616,7 +1794,7 @@ export default function AlumniDashboard() {
                     )}
                     {selectedAlumni.website && (
                       <a href={selectedAlumni.website} target="_blank" rel="noreferrer"
-                        style={{display:'flex',alignItems:'center',gap:8,background:'#f3eeff',color:'#5f2c82',borderRadius:12,padding:'8px 16px',textDecoration:'none',fontWeight:600,fontSize:14}}>
+                        style={{display:'flex',alignItems:'center',gap:8,background:'#f3eeff',color:'#0f4ea8',borderRadius:12,padding:'8px 16px',textDecoration:'none',fontWeight:600,fontSize:14}}>
                         <i className="fa-solid fa-globe" style={{fontSize:18}}></i> Website
                       </a>
                     )}
@@ -1637,7 +1815,7 @@ export default function AlumniDashboard() {
         maxHeight:'92vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(95,44,130,0.28)'
       }}>
           {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
             <div>
               <h3 style={{color:'white', margin:0, fontSize:17, fontWeight:800}}>
                 <i className="fa-solid fa-pen-to-square" style={{marginRight:10}}></i>Event Registration
@@ -1658,7 +1836,7 @@ export default function AlumniDashboard() {
               )}
               {registerEvent.payment_account && (
                 <div style={{fontSize:13, color:'#6b4000', display:'flex', alignItems:'center', gap:6}}>
-                  <i className="fa-solid fa-building-columns" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-building-columns" style={{color:'#00a3a3'}}></i>
                   <span>Send payment to: <strong>{registerEvent.payment_account}</strong></span>
                 </div>
               )}
@@ -1684,7 +1862,7 @@ export default function AlumniDashboard() {
                 { label:'Phone Number *', name:'phone',      type:'tel',   placeholder:'e.g. 01712345678',      required:true },
               ].map(f => (
                 <div key={f.name}>
-                  <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
+                  <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
                   <input
                     type={f.type}
                     placeholder={f.placeholder}
@@ -1696,7 +1874,7 @@ export default function AlumniDashboard() {
                 </div>
               ))}
               <div>
-                <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
+                <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
                   Transaction ID / Reference No {Number(registerEvent.fee) > 0 ? '*' : '(optional)'}
                 </label>
                 <input
@@ -1715,7 +1893,7 @@ export default function AlumniDashboard() {
 
               <div style={{display:'flex', gap:10, marginTop:4}}>
                 <button type="submit" disabled={registerSubmitting} style={{
-                  flex:1, background:'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white',
+                  flex:1, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white',
                   border:'none', padding:'12px', borderRadius:25, fontSize:14, fontWeight:700,
                   cursor: registerSubmitting ? 'not-allowed' : 'pointer', fontFamily:'Inter,sans-serif',
                   opacity: registerSubmitting ? 0.7 : 1, display:'flex', alignItems:'center', justifyContent:'center', gap:8
@@ -1726,7 +1904,7 @@ export default function AlumniDashboard() {
                   }
                 </button>
                 <button type="button" onClick={() => setShowRegisterModal(false)} style={{
-                  flex:1, background:'#f3eeff', color:'#5f2c82', border:'none', padding:'12px',
+                  flex:1, background:'#f3eeff', color:'#0f4ea8', border:'none', padding:'12px',
                   borderRadius:25, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif'
                 }}>Cancel</button>
               </div>
@@ -1744,7 +1922,7 @@ export default function AlumniDashboard() {
         maxHeight:'92vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(95,44,130,0.28)'
       }}>
           {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
             <div>
               <h3 style={{color:'white', margin:0, fontSize:17, fontWeight:800}}>
                 <i className="fa-solid fa-chalkboard-user" style={{marginRight:10}}></i>Training Enrollment
@@ -1765,7 +1943,7 @@ export default function AlumniDashboard() {
               )}
               {enrollTrainingItem.payment_account && (
                 <div style={{fontSize:13, color:'#6b4000', display:'flex', alignItems:'center', gap:6}}>
-                  <i className="fa-solid fa-building-columns" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-building-columns" style={{color:'#00a3a3'}}></i>
                   <span>Send payment to: <strong>{enrollTrainingItem.payment_account}</strong></span>
                 </div>
               )}
@@ -1791,7 +1969,7 @@ export default function AlumniDashboard() {
                 { label:'Payment Method', name:'payment_method', type:'text',  placeholder:'e.g. bKash, Bank Transfer' },
               ].map(f => (
                 <div key={f.name}>
-                  <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
+                  <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
                   <input
                     type={f.type}
                     placeholder={f.placeholder}
@@ -1803,7 +1981,7 @@ export default function AlumniDashboard() {
                 </div>
               ))}
               <div>
-                <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
+                <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
                   Transaction ID / Reference No {Number(enrollTrainingItem.fee) > 0 ? '*' : '(optional)'}
                 </label>
                 <input
@@ -1822,7 +2000,7 @@ export default function AlumniDashboard() {
 
               <div style={{display:'flex', gap:10, marginTop:4}}>
                 <button type="submit" disabled={trainEnrollSubmitting} style={{
-                  flex:1, background:'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white',
+                  flex:1, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white',
                   border:'none', padding:'12px', borderRadius:25, fontSize:14, fontWeight:700,
                   cursor: trainEnrollSubmitting ? 'not-allowed' : 'pointer', fontFamily:'Inter,sans-serif',
                   opacity: trainEnrollSubmitting ? 0.7 : 1, display:'flex', alignItems:'center', justifyContent:'center', gap:8
@@ -1833,7 +2011,7 @@ export default function AlumniDashboard() {
                   }
                 </button>
                 <button type="button" onClick={() => setShowTrainEnrollModal(false)} style={{
-                  flex:1, background:'#f3eeff', color:'#5f2c82', border:'none', padding:'12px',
+                  flex:1, background:'#f3eeff', color:'#0f4ea8', border:'none', padding:'12px',
                   borderRadius:25, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif'
                 }}>Cancel</button>
               </div>
@@ -1851,7 +2029,7 @@ export default function AlumniDashboard() {
         boxShadow:'0 24px 64px rgba(95,44,130,0.28)'
       }}>
           {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
             <div>
               <h3 style={{color:'white', margin:0, fontSize:17, fontWeight:800}}>
                 <i className="fa-solid fa-users" style={{marginRight:10}}></i>Enrolled Attendees
@@ -1863,7 +2041,7 @@ export default function AlumniDashboard() {
 
           <div style={{padding:'24px 28px'}}>
             {myTrainAttendeesLoading ? (
-              <div style={{textAlign:'center', padding:'48px 0', color:'#a4508b'}}>
+              <div style={{textAlign:'center', padding:'48px 0', color:'#00a3a3'}}>
                 <i className="fa-solid fa-spinner fa-spin" style={{fontSize:32}}></i>
               </div>
             ) : myTrainAttendees.length === 0 ? (
@@ -1874,22 +2052,22 @@ export default function AlumniDashboard() {
             ) : (
               <div style={{overflowX:'auto'}}>
                 <p style={{fontSize:13, color:'#888', marginBottom:12}}>
-                  <strong style={{color:'#5f2c82'}}>{myTrainAttendees.length}</strong> alumni enrolled
+                  <strong style={{color:'#0f4ea8'}}>{myTrainAttendees.length}</strong> alumni enrolled
                 </p>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
                   <thead>
                     <tr style={{background:'#f3eeff'}}>
                       {['#','Name','Student ID','Email','Phone','Payment Method','Transaction ID','Enrolled At'].map(h => (
-                        <th key={h} style={{padding:'10px 12px', textAlign:'left', fontWeight:700, color:'#5f2c82', fontSize:12, letterSpacing:'0.3px', whiteSpace:'nowrap'}}>{h}</th>
+                        <th key={h} style={{padding:'10px 12px', textAlign:'left', fontWeight:700, color:'#0f4ea8', fontSize:12, letterSpacing:'0.3px', whiteSpace:'nowrap'}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {myTrainAttendees.map((a, i) => (
-                      <tr key={a.id} style={{borderBottom:'1px solid #f0eaf8'}}>
+                      <tr key={a.id} style={{borderBottom:'1px solid #e8f2ff'}}>
                         <td style={{padding:'10px 12px', color:'#aaa'}}>{i+1}</td>
                         <td style={{padding:'10px 12px', fontWeight:600, color:'#333', display:'flex', alignItems:'center', gap:8}}>
-                          <div style={{width:30, height:30, borderRadius:'50%', background:'linear-gradient(135deg,#5f2c82,#a4508b)', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:12, fontWeight:700, flexShrink:0}}>
+                          <div style={{width:30, height:30, borderRadius:'50%', background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:12, fontWeight:700, flexShrink:0}}>
                             {a.name?.[0]?.toUpperCase() || '?'}
                           </div>
                           {a.name}
@@ -1912,7 +2090,7 @@ export default function AlumniDashboard() {
             )}
             <div style={{marginTop:20, display:'flex', justifyContent:'flex-end'}}>
               <button onClick={() => setShowMyTrainAttendeesModal(false)} style={{
-                background:'#f3eeff', color:'#5f2c82', border:'none', padding:'10px 28px',
+                background:'#f3eeff', color:'#0f4ea8', border:'none', padding:'10px 28px',
                 borderRadius:25, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif'
               }}>Close</button>
             </div>
@@ -1928,7 +2106,7 @@ export default function AlumniDashboard() {
         boxShadow:'0 24px 64px rgba(95,44,130,0.28)'
       }}>
           {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', borderRadius:'24px 24px 0 0', padding:'22px 28px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
             <div>
               <h3 style={{color:'white', margin:0, fontSize:17, fontWeight:800}}>
                 <i className="fa-solid fa-chalkboard-user" style={{marginRight:10}}></i>Add Training
@@ -1953,7 +2131,7 @@ export default function AlumniDashboard() {
                 { label:'Total Seats *',   name:'seats',   type:'number', placeholder:'e.g., 30',               required:true },
               ].map(f => (
                 <div key={f.name}>
-                  <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
+                  <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>{f.label}</label>
                   <input
                     type={f.type}
                     placeholder={f.placeholder}
@@ -1966,14 +2144,14 @@ export default function AlumniDashboard() {
                 </div>
               ))}
               <div>
-                <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Status</label>
+                <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>Status</label>
                 <select value={addTrainForm.status} onChange={e => setAddTrainForm({...addTrainForm, status: e.target.value})}
                   style={{width:'100%', padding:'10px 14px', border:'1.5px solid #e0d5f5', borderRadius:10, fontSize:14, outline:'none', fontFamily:'Inter,sans-serif', color:'#333', boxSizing:'border-box'}}>
                   <option>Upcoming</option><option>Ongoing</option><option>Full</option><option>Completed</option>
                 </select>
               </div>
               <div>
-                <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
+                <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
                   Registration Fee (৳) <span style={{color:'#aaa', fontWeight:400, textTransform:'none'}}>(optional)</span>
                 </label>
                 <input type="number" min="0" step="0.01" placeholder="0 = free"
@@ -1983,7 +2161,7 @@ export default function AlumniDashboard() {
                 />
               </div>
               <div>
-                <label style={{fontSize:12, fontWeight:700, color:'#5f2c82', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
+                <label style={{fontSize:12, fontWeight:700, color:'#0f4ea8', letterSpacing:'0.3px', textTransform:'uppercase', display:'block', marginBottom:6}}>
                   Payment Account <span style={{color:'#aaa', fontWeight:400, textTransform:'none'}}>(optional)</span>
                 </label>
                 <input type="text" placeholder="e.g., bKash: 01712345678"
@@ -1999,7 +2177,7 @@ export default function AlumniDashboard() {
 
               <div style={{display:'flex', gap:10, marginTop:4}}>
                 <button type="submit" disabled={addTrainSubmitting} style={{
-                  flex:1, background:'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white',
+                  flex:1, background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white',
                   border:'none', padding:'12px', borderRadius:25, fontSize:14, fontWeight:700,
                   cursor: addTrainSubmitting ? 'not-allowed' : 'pointer', fontFamily:'Inter,sans-serif',
                   opacity: addTrainSubmitting ? 0.7 : 1, display:'flex', alignItems:'center', justifyContent:'center', gap:8
@@ -2010,7 +2188,7 @@ export default function AlumniDashboard() {
                   }
                 </button>
                 <button type="button" onClick={() => setShowAddTrainModal(false)} style={{
-                  flex:1, background:'#f3eeff', color:'#5f2c82', border:'none', padding:'12px',
+                  flex:1, background:'#f3eeff', color:'#0f4ea8', border:'none', padding:'12px',
                   borderRadius:25, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif'
                 }}>Cancel</button>
               </div>

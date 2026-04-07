@@ -1,8 +1,8 @@
 .login-section {
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: 80px 20px;
+  align-items: flex-start;
+  padding: 10px 20px 80px;
   background: linear-gradient(135deg, #5f2c82, #a4508b);
   min-height: 80vh;
   color: white;

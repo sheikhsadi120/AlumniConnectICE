@@ -151,6 +151,47 @@ def ensure_db_migrations():
             """
         )
 
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fund_requests (
+                id                   INT AUTO_INCREMENT PRIMARY KEY,
+                title                VARCHAR(200) NOT NULL,
+                purpose              TEXT NOT NULL,
+                target_amount        DECIMAL(12,2) NOT NULL,
+                payment_option       ENUM('bkash','bank','both') DEFAULT 'both',
+                bkash_number         VARCHAR(30) DEFAULT NULL,
+                bank_account_name    VARCHAR(150) DEFAULT NULL,
+                bank_account_number  VARCHAR(80) DEFAULT NULL,
+                bank_name            VARCHAR(150) DEFAULT NULL,
+                status               ENUM('open','closed') DEFAULT 'open',
+                created_by           VARCHAR(100) DEFAULT 'admin',
+                created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Ensure fund_transactions has newer workflow columns.
+        fund_tx_columns = [
+            ('request_id', "ALTER TABLE fund_transactions ADD COLUMN request_id INT DEFAULT NULL"),
+            ('alumni_id', "ALTER TABLE fund_transactions ADD COLUMN alumni_id INT DEFAULT NULL"),
+            ('payment_method', "ALTER TABLE fund_transactions ADD COLUMN payment_method VARCHAR(30) DEFAULT NULL"),
+            ('payment_reference', "ALTER TABLE fund_transactions ADD COLUMN payment_reference VARCHAR(120) DEFAULT NULL"),
+            ('created_by_role', "ALTER TABLE fund_transactions ADD COLUMN created_by_role ENUM('admin','alumni') DEFAULT 'alumni'"),
+            ('status', "ALTER TABLE fund_transactions ADD COLUMN status ENUM('pending','paid','rejected') DEFAULT 'paid'"),
+        ]
+        for column_name, alter_sql in fund_tx_columns:
+            cur.execute(
+                """
+                SELECT 1
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA=%s AND TABLE_NAME='fund_transactions' AND COLUMN_NAME=%s
+                LIMIT 1
+                """,
+                (config.MYSQL_DB, column_name),
+            )
+            if not cur.fetchone():
+                cur.execute(alter_sql)
+
         # Add is_manually_added column if it doesn't exist
         cur.execute(
             """
@@ -1084,9 +1125,20 @@ def alumni_events(aid):
 
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
+    alumni_id = request.args.get('alumni_id', type=int)
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM fund_transactions ORDER BY date DESC")
+    query = """
+        SELECT ft.*, fr.title AS request_title
+        FROM fund_transactions ft
+        LEFT JOIN fund_requests fr ON fr.id = ft.request_id
+    """
+    params = []
+    if alumni_id:
+        query += " WHERE ft.alumni_id=%s"
+        params.append(alumni_id)
+    query += " ORDER BY ft.date DESC, ft.id DESC"
+    cur.execute(query, tuple(params))
     rows = cur.fetchall()
     cur.close()
     for r in rows:
@@ -1098,12 +1150,35 @@ def get_transactions():
 
 @app.route('/api/transactions', methods=['POST'])
 def add_transaction():
-    data = request.get_json()
+    data = request.get_json() or {}
+    donor = (data.get('donor') or '').strip()
+    tx_type = (data.get('type') or 'Donation').strip()
+    amount = data.get('amount')
+    tx_date = data.get('date')
+    if not donor or not amount or not tx_date:
+        return jsonify({'success': False, 'message': 'donor, amount and date are required'}), 400
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO fund_transactions (donor, type, amount, date, note) VALUES (%s,%s,%s,%s,%s)",
-        (data.get('donor'), data.get('type'), data.get('amount'), data.get('date'), data.get('note'))
+        """
+        INSERT INTO fund_transactions
+        (donor, type, amount, date, note, request_id, alumni_id, payment_method, payment_reference, created_by_role, status)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            donor,
+            tx_type,
+            amount,
+            tx_date,
+            data.get('note'),
+            data.get('request_id'),
+            data.get('alumni_id'),
+            data.get('payment_method'),
+            data.get('payment_reference') or data.get('transaction_id'),
+            data.get('created_by_role') or 'alumni',
+            data.get('status') or 'paid',
+        )
     )
     conn.commit()
     new_id = cur.lastrowid
@@ -1119,6 +1194,67 @@ def delete_transaction(tid):
     conn.commit()
     cur.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/fund-requests', methods=['GET'])
+def get_fund_requests():
+    status = (request.args.get('status') or '').strip().lower()
+    conn = get_db()
+    cur = conn.cursor()
+    query = "SELECT * FROM fund_requests"
+    params = []
+    if status in ('open', 'closed'):
+        query += " WHERE status=%s"
+        params.append(status)
+    query += " ORDER BY id DESC"
+    cur.execute(query, tuple(params))
+    rows = cur.fetchall()
+    cur.close()
+    for r in rows:
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+        if r.get('target_amount') is not None:
+            r['target_amount'] = float(r['target_amount'])
+    return jsonify(rows)
+
+
+@app.route('/api/fund-requests', methods=['POST'])
+def add_fund_request():
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    purpose = (data.get('purpose') or '').strip()
+    target_amount = data.get('target_amount')
+    payment_option = (data.get('payment_option') or 'both').strip().lower()
+    if not title or not purpose or not target_amount:
+        return jsonify({'success': False, 'message': 'title, purpose and target_amount are required'}), 400
+    if payment_option not in ('bkash', 'bank', 'both'):
+        payment_option = 'both'
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO fund_requests
+        (title, purpose, target_amount, payment_option, bkash_number, bank_account_name, bank_account_number, bank_name, status, created_by)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            title,
+            purpose,
+            target_amount,
+            payment_option,
+            data.get('bkash_number'),
+            data.get('bank_account_name'),
+            data.get('bank_account_number'),
+            data.get('bank_name'),
+            data.get('status') or 'open',
+            data.get('created_by') or 'admin',
+        ),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    cur.close()
+    return jsonify({'success': True, 'id': new_id}), 201
 
 
 # ═══════════════════════════════════════════════════════
@@ -1705,7 +1841,7 @@ def delete_exist_alumni(alumni_id):
 def get_stats():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni')")
+    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0)")
     total_alumni = cur.fetchone()['cnt']
     cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND user_type='student'")
     total_students = cur.fetchone()['cnt']

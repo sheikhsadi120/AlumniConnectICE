@@ -10,8 +10,14 @@ export const getUploadUrl = (pathOrUrl) => {
 
 async function request(path, options = {}) {
   try {
+    const hasBody = options.body !== undefined && options.body !== null;
+    const headers = { ...(options.headers || {}) };
+    if (hasBody && !Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers,
       ...options,
     });
     let data = {};
@@ -79,9 +85,21 @@ export const registerForEvent   = (eid, d)   => request(`/events/${eid}/register
 export const getEventAttendees  = (eid)      => request(`/events/${eid}/attendees`);
 
 // ── Transactions ──────────────────────────────────────
-export const getTransactions    = ()      => request('/transactions');
+export const getTransactions    = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.alumni_id) query.set('alumni_id', String(params.alumni_id));
+  const qs = query.toString();
+  return request(`/transactions${qs ? `?${qs}` : ''}`);
+};
 export const addTransaction     = (d)     => request('/transactions',     { method:'POST',   body: JSON.stringify(d) });
 export const deleteTransaction  = (id)    => request(`/transactions/${id}`,{ method:'DELETE' });
+export const getFundRequests    = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', String(params.status));
+  const qs = query.toString();
+  return request(`/fund-requests${qs ? `?${qs}` : ''}`);
+};
+export const addFundRequest     = (d)     => request('/fund-requests', { method:'POST', body: JSON.stringify(d) });
 
 // ── Trainings ─────────────────────────────────────────
 export const getTrainings      = ()        => request('/trainings');

@@ -10,6 +10,7 @@ import {
   getPending, getAlumni, getStudents, approveAlumni, rejectAlumni, deleteAlumni,
   getEvents, addEvent, deleteEvent,
   getTransactions, addTransaction, deleteTransaction,
+  getFundRequests, addFundRequest,
   getTrainings, addTraining, deleteTraining,
   getJobs, addJob, deleteJob, getPendingJobs, approveJob,
   getExistingLists, uploadExistingList, deleteExistingList, getExistingListData,
@@ -41,7 +42,7 @@ const deptData = [
   { name: 'CSE', value: 38 }, { name: 'EEE', value: 22 },
   { name: 'BBA', value: 18 }, { name: 'MBA', value: 12 }, { name: 'ICE', value: 10 },
 ]
-const PIE_COLORS = ['#5f2c82','#a4508b','#ffd6ff','#7c3aad','#d9b8ff']
+const PIE_COLORS = ['#0f4ea8','#00a3a3','#d7f4ff','#7c3aad','#b8e5f5']
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -52,6 +53,7 @@ export default function AdminDashboard() {
   const [students,     setStudents]     = useState([])
   const [events,       setEvents]       = useState([])
   const [transactions, setTransactions] = useState([])
+  const [fundRequests, setFundRequests] = useState([])
   const [trainings,    setTrainings]    = useState([])
   const [jobs,         setJobs]         = useState([])
   const [pendingJobs,  setPendingJobs]  = useState([])
@@ -69,8 +71,11 @@ export default function AdminDashboard() {
   const [attendees,          setAttendees]          = useState([])
   const [attendeesLoading,   setAttendeesLoading]   = useState(false)
   const [attendeesSearch,    setAttendeesSearch]    = useState('')
-  const [showTxModal,    setShowTxModal]    = useState(false)
-  const [newTx,          setNewTx]          = useState({ donor:'', type:'Donation', amount:'', date:'', note:'' })
+  const [showFundReqModal, setShowFundReqModal] = useState(false)
+  const [newFundReq, setNewFundReq] = useState({
+    title:'', purpose:'', target_amount:'', payment_option:'both',
+    bkash_number:'', bank_account_name:'', bank_account_number:'', bank_name:''
+  })
   const [showTrainModal, setShowTrainModal] = useState(false)
   const [newTraining,    setNewTraining]    = useState({ title:'', trainer:'', date:'', seats:'', status:'Upcoming', fee:'', payment_account:'' })
   const [showTrainAttendeesModal, setShowTrainAttendeesModal] = useState(false)
@@ -120,9 +125,9 @@ export default function AdminDashboard() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [pd, al, st, ev, tx, tr, jb, stats_, pj, ur, el, ea] = await Promise.all([
+      const [pd, al, st, ev, tx, fr, tr, jb, stats_, pj, ur, el, ea] = await Promise.all([
         getPending(), getAlumni(), getStudents(), getEvents(),
-        getTransactions(), getTrainings(), getJobs(), getStats(), getPendingJobs(),
+        getTransactions(), getFundRequests({ status: 'open' }), getTrainings(), getJobs(), getStats(), getPendingJobs(),
         getUpgradeRequests(),
         getExistingLists(),
         getExistAlumni(),
@@ -132,6 +137,7 @@ export default function AdminDashboard() {
       if (st.ok) setStudents(st.data)
       if (ev.ok) setEvents(ev.data)
       if (tx.ok) setTransactions(tx.data)
+      if (fr.ok) setFundRequests(fr.data)
       if (tr.ok) setTrainings(tr.data)
       if (jb.ok) setJobs(jb.data)
       if (stats_.ok) setStats(stats_.data)
@@ -256,13 +262,34 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleAddTx = async (e) => {
+  const handleAddFundRequest = async (e) => {
     e.preventDefault()
-    const { ok, data } = await addTransaction({ ...newTx, amount: Number(newTx.amount) })
-    if (ok) {
-      setTransactions(prev => [...prev, { ...newTx, id: data.id, amount: Number(newTx.amount) }])
-      setNewTx({ donor:'', type:'Donation', amount:'', date:'', note:'' })
-      setShowTxModal(false)
+    const payload = {
+      ...newFundReq,
+      target_amount: Number(newFundReq.target_amount),
+      created_by: 'admin',
+      status: 'open',
+    }
+    try {
+      const { ok, data } = await addFundRequest(payload)
+      if (!ok) {
+        alert('Could not publish request. Please try again.')
+        setShowFundReqModal(false)
+        setActiveView('alumni')
+        return
+      }
+
+      setFundRequests(prev => [{ ...payload, id: data.id }, ...prev])
+      setNewFundReq({
+        title:'', purpose:'', target_amount:'', payment_option:'both',
+        bkash_number:'', bank_account_name:'', bank_account_number:'', bank_name:''
+      })
+      setShowFundReqModal(false)
+      setActiveView('alumni')
+    } catch (_) {
+      alert('Could not publish request. Please try again.')
+      setShowFundReqModal(false)
+      setActiveView('alumni')
     }
   }
 
@@ -494,7 +521,8 @@ export default function AdminDashboard() {
   }
 
   const handleLogout = () => navigate('/')
-  const totalFund = transactions.reduce((s, t) => s + Number(t.amount), 0)
+  const paidTransactions = transactions.filter(t => (t.status || 'paid') === 'paid')
+  const totalFund = paidTransactions.reduce((s, t) => s + Number(t.amount || 0), 0)
 
   const emailBaseRecipients = useMemo(() => {
     const normalizedAlumni = alumni.map((person) => ({
@@ -640,7 +668,6 @@ export default function AdminDashboard() {
     { view:'sms-center',   icon:'fa-comments',         label:'SMS Center',         section:null },
     { view:'transactions', icon:'fa-money-bill-wave', label:'Fund Transactions',  section:'Finance & Growth' },
     { view:'trainings',    icon:'fa-chalkboard-user', label:'Trainings',          section:null },
-    { view:'charts',       icon:'fa-chart-line',      label:'Analytics & Charts', section:null },
   ]
   const titles = {
     dashboard:    { title:'Dashboard',          sub:'Welcome back, Admin 👋' },
@@ -660,7 +687,7 @@ export default function AdminDashboard() {
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',
       background:'linear-gradient(135deg,#f3eeff 0%,#fdf6ff 100%)',
-      fontFamily:'Inter,sans-serif', color:'#5f2c82', fontSize:18, gap:12
+      fontFamily:'Inter,sans-serif', color:'#0f4ea8', fontSize:18, gap:12
     }}>
       <i className="fa-solid fa-spinner fa-spin"></i> Loading\u2026
     </div>
@@ -683,7 +710,7 @@ export default function AdminDashboard() {
                 <i className={`fa-solid ${item.icon}`}></i>
                 {item.label}
                 {item.badge > 0 && (
-                  <span style={{marginLeft:'auto', background:'#ffd6ff', color:'#5f2c82',
+                  <span style={{marginLeft:'auto', background:'#d7f4ff', color:'#0f4ea8',
                     fontSize:'11px', fontWeight:700, padding:'1px 8px', borderRadius:'20px'}}>
                     {item.badge}
                   </span>
@@ -757,7 +784,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon pink"><i className="fa-solid fa-user-check"></i></div>
-                  <div className="stat-info"><h3>{stats.total_alumni + stats.total_students + stats.pending}</h3><p>Registered Users</p></div>
+                  <div className="stat-info"><h3>{stats.total_alumni + stats.total_students}</h3><p>Registered Users</p></div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon green"><i className="fa-solid fa-bangladeshi-taka-sign"></i></div>
@@ -773,7 +800,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
               <div className="section-title">
-                <i className="fa-solid fa-clock" style={{color:'#a4508b'}}></i>
+                <i className="fa-solid fa-clock" style={{color:'#00a3a3'}}></i>
                 Recent Pending Approvals
                 <span className="badge-count">{pending.length}</span>
               </div>
@@ -799,7 +826,7 @@ export default function AdminDashboard() {
           {activeView === 'alumni' && (
             <>
               <div className="section-title">
-                <i className="fa-solid fa-users" style={{color:'#a4508b'}}></i>
+                <i className="fa-solid fa-users" style={{color:'#00a3a3'}}></i>
                 All Alumni <span className="badge-count">{alumni.length}</span>
               </div>
               {alumni.length === 0 ? (
@@ -837,7 +864,7 @@ export default function AdminDashboard() {
           {activeView === 'students' && (
             <>
               <div className="section-title">
-                <i className="fa-solid fa-user-graduate" style={{color:'#a4508b'}}></i>
+                <i className="fa-solid fa-user-graduate" style={{color:'#00a3a3'}}></i>
                 All Students <span className="badge-count">{students.length}</span>
               </div>
               {students.length === 0 ? (
@@ -1251,41 +1278,67 @@ export default function AdminDashboard() {
             <>
               <div className="events-header">
                 <div className="section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-money-bill-wave" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-money-bill-wave" style={{color:'#00a3a3'}}></i>
                   Fund Transactions <span className="badge-count">{transactions.length}</span>
                 </div>
-                <button className="btn-add-event" onClick={() => setShowTxModal(true)}>
-                  <i className="fa-solid fa-plus"></i> Add Transaction
+                <button className="btn-add-event" onClick={() => setShowFundReqModal(true)}>
+                  <i className="fa-solid fa-plus"></i> Create Fund Request
                 </button>
               </div>
               <div className="stat-grid" style={{marginTop:20}}>
                 <div className="stat-card">
                   <div className="stat-icon green"><i className="fa-solid fa-bangladeshi-taka-sign"></i></div>
-                  <div className="stat-info"><h3>\u09f3{totalFund.toLocaleString()}</h3><p>Total Fund Collected</p></div>
+                  <div className="stat-info"><h3>Tk {totalFund.toLocaleString()}</h3><p>Total Fund Collected</p></div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon purple"><i className="fa-solid fa-hand-holding-heart"></i></div>
-                  <div className="stat-info"><h3>{transactions.filter(t=>t.type==='Donation').length}</h3><p>Total Donations</p></div>
+                  <div className="stat-info"><h3>{paidTransactions.filter(t=>t.type==='Donation').length}</h3><p>Total Donations</p></div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon orange"><i className="fa-solid fa-handshake"></i></div>
-                  <div className="stat-info"><h3>{transactions.filter(t=>t.type==='Sponsorship').length}</h3><p>Sponsorships</p></div>
+                  <div className="stat-info"><h3>{paidTransactions.filter(t=>t.type==='Sponsorship').length}</h3><p>Sponsorships</p></div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon pink"><i className="fa-solid fa-id-card"></i></div>
-                  <div className="stat-info"><h3>{transactions.filter(t=>t.type==='Membership Fee').length}</h3><p>Membership Fees</p></div>
+                  <div className="stat-info"><h3>{paidTransactions.filter(t=>t.type==='Membership Fee').length}</h3><p>Membership Fees</p></div>
                 </div>
               </div>
+
+              <div className="section-title" style={{marginTop:24}}>
+                <i className="fa-solid fa-file-circle-plus" style={{color:'#00a3a3'}}></i>
+                Active Fund Requests <span className="badge-count">{fundRequests.length}</span>
+              </div>
+              {fundRequests.length === 0 ? (
+                <div className="admin-table-wrap"><div className="empty-state"><i className="fa-solid fa-folder-open"></i><p>No active fund request yet.</p></div></div>
+              ) : (
+                <div className="events-grid" style={{marginTop:12}}>
+                  {fundRequests.map((r) => (
+                    <div className="event-card" key={r.id} style={{borderTopColor:'#00a3a3'}}>
+                      <h4><i className="fa-solid fa-bullhorn" style={{color:'#00a3a3',marginRight:6}}></i>{r.title}</h4>
+                      <p><i className="fa-solid fa-circle-info"></i> {r.purpose}</p>
+                      <p><i className="fa-solid fa-bangladeshi-taka-sign"></i> Target: Tk {Number(r.target_amount || 0).toLocaleString()}</p>
+                      <p><i className="fa-solid fa-credit-card"></i> Payment: <strong>{(r.payment_option || 'both').toUpperCase()}</strong></p>
+                      {r.bkash_number && <p style={{fontSize:12,color:'#444'}}>bKash: {r.bkash_number}</p>}
+                      {(r.bank_name || r.bank_account_number) && (
+                        <p style={{fontSize:12,color:'#444'}}>Bank: {[r.bank_name, r.bank_account_name, r.bank_account_number].filter(Boolean).join(' | ')}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="admin-table-wrap" style={{marginTop:24}}>
                 <table className="admin-table">
-                  <thead><tr><th>#</th><th>Donor</th><th>Type</th><th>Amount (\u09f3)</th><th>Date</th><th>Note</th><th>Action</th></tr></thead>
+                  <thead><tr><th>#</th><th>Donor</th><th>Request</th><th>Type</th><th>Amount (Tk)</th><th>Payment</th><th>Date</th><th>Note</th><th>Action</th></tr></thead>
                   <tbody>
                     {transactions.map((t, i) => (
                       <tr key={t.id}>
                         <td>{i+1}</td>
-                        <td><div className="alumni-name-cell"><div className="table-avatar">{t.donor[0]}</div>{t.donor}</div></td>
+                        <td><div className="alumni-name-cell"><div className="table-avatar">{(t.donor || 'U')[0]}</div>{t.donor || 'Unknown'}</div></td>
+                        <td>{t.request_title || 'Manual / Legacy'}</td>
                         <td><span className={`status-badge ${t.type==='Donation'?'approved':t.type==='Sponsorship'?'pending':'rejected'}`}>{t.type}</span></td>
-                        <td><strong>\u09f3{Number(t.amount).toLocaleString()}</strong></td>
+                        <td><strong>Tk {Number(t.amount).toLocaleString()}</strong></td>
+                        <td>{[t.payment_method, t.payment_reference].filter(Boolean).join(' | ') || '—'}</td>
                         <td>{t.date}</td>
                         <td>{t.note}</td>
                         <td><button className="btn-delete" onClick={()=>handleDeleteTx(t.id)}><i className="fa-solid fa-trash"></i> Delete</button></td>
@@ -1302,7 +1355,7 @@ export default function AdminDashboard() {
             <>
               <div className="events-header">
                 <div className="section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-chalkboard-user" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-chalkboard-user" style={{color:'#00a3a3'}}></i>
                   Trainings <span className="badge-count">{trainings.length}</span>
                 </div>
                 <button className="btn-add-event" onClick={() => setShowTrainModal(true)}>
@@ -1311,19 +1364,19 @@ export default function AdminDashboard() {
               </div>
               <div className="events-grid" style={{marginTop:20}}>
                 {trainings.map(tr => (
-                  <div className="event-card" key={tr.id} style={{borderTopColor: tr.status==='Full'?'#a4508b':'#5f2c82'}}>
-                    <h4><i className="fa-solid fa-chalkboard" style={{color:'#a4508b',marginRight:6}}></i>{tr.title}</h4>
+                  <div className="event-card" key={tr.id} style={{borderTopColor: tr.status==='Full'?'#00a3a3':'#0f4ea8'}}>
+                    <h4><i className="fa-solid fa-chalkboard" style={{color:'#00a3a3',marginRight:6}}></i>{tr.title}</h4>
                     <p><i className="fa-solid fa-user-tie"></i> {tr.trainer}</p>
                     <p><i className="fa-solid fa-calendar"></i> {tr.date}</p>
                     <p><i className="fa-solid fa-chair"></i> {tr.enrolled}/{tr.seats} Enrolled</p>
                     {Number(tr.fee) > 0 && (
-                      <p style={{fontWeight:700,color:'#5f2c82',fontSize:13,marginTop:4}}>
+                      <p style={{fontWeight:700,color:'#0f4ea8',fontSize:13,marginTop:4}}>
                         <i className="fa-solid fa-bangladeshi-taka-sign" style={{marginRight:4}}></i>Fee: ৳{Number(tr.fee).toLocaleString()}
                       </p>
                     )}
                     {tr.payment_account && (
                       <p style={{fontSize:12,color:'#888',marginTop:2}}>
-                        <i className="fa-solid fa-building-columns" style={{color:'#a4508b',marginRight:4}}></i>
+                        <i className="fa-solid fa-building-columns" style={{color:'#00a3a3',marginRight:4}}></i>
                         Pay to: <strong style={{color:'#333'}}>{tr.payment_account}</strong>
                       </p>
                     )}
@@ -1331,7 +1384,7 @@ export default function AdminDashboard() {
                       <span className={`status-badge ${tr.status==='Full'?'rejected':tr.status==='Ongoing'?'approved':'pending'}`}>{tr.status}</span>
                     </div>
                     <div style={{marginTop:12,background:'#f3eeff',borderRadius:10,height:8,overflow:'hidden'}}>
-                      <div style={{width:`${Math.min(100,Math.round(tr.enrolled/tr.seats*100))}%`,height:'100%',background:'linear-gradient(90deg,#5f2c82,#a4508b)',borderRadius:10,transition:'width 0.4s'}}/>
+                      <div style={{width:`${Math.min(100,Math.round(tr.enrolled/tr.seats*100))}%`,height:'100%',background:'linear-gradient(90deg,#0f4ea8,#00a3a3)',borderRadius:10,transition:'width 0.4s'}}/>
                     </div>
                     <div className="event-actions" style={{marginTop:12}}>
                       <button className="btn-approve" onClick={() => handleViewTrainingAttendees(tr)} style={{marginRight:8}}><i className="fa-solid fa-users"></i> Attendees</button>
@@ -1350,10 +1403,10 @@ export default function AdminDashboard() {
                 <div className="chart-card-title"><i className="fa-solid fa-arrow-trend-up"></i> Alumni Growth (Monthly)</div>
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={alumniGrowthData} margin={{top:10,right:20,left:0,bottom:0}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0eaf8"/>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e8f2ff"/>
                     <XAxis dataKey="month" tick={{fontSize:12}}/><YAxis tick={{fontSize:12}}/>
                     <Tooltip/><Legend/>
-                    <Line type="monotone" dataKey="alumni" stroke="#5f2c82" strokeWidth={3} dot={{r:5,fill:'#a4508b'}} name="Alumni"/>
+                    <Line type="monotone" dataKey="alumni" stroke="#0f4ea8" strokeWidth={3} dot={{r:5,fill:'#00a3a3'}} name="Alumni"/>
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -1361,11 +1414,11 @@ export default function AdminDashboard() {
                 <div className="chart-card-title"><i className="fa-solid fa-bangladeshi-taka-sign"></i> Fund Collected (Monthly \u09f3)</div>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={fundChartData} margin={{top:10,right:20,left:0,bottom:0}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0eaf8"/>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e8f2ff"/>
                     <XAxis dataKey="month" tick={{fontSize:12}}/><YAxis tick={{fontSize:12}}/>
                     <Tooltip formatter={v=>`\u09f3${v.toLocaleString()}`}/><Legend/>
                     <Bar dataKey="amount" name="Fund (\u09f3)" radius={[8,8,0,0]}>
-                      {fundChartData.map((_,i)=><Cell key={i} fill={i%2===0?'#5f2c82':'#a4508b'}/>)}
+                      {fundChartData.map((_,i)=><Cell key={i} fill={i%2===0?'#0f4ea8':'#00a3a3'}/>)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -1386,11 +1439,11 @@ export default function AdminDashboard() {
                 <div className="chart-card-title"><i className="fa-solid fa-chalkboard-user"></i> Training Enrollment</div>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={trainings.map(t=>({name:t.title.length>20?t.title.slice(0,20)+'\u2026':t.title,Enrolled:t.enrolled,Seats:t.seats}))} margin={{top:10,right:20,left:0,bottom:0}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0eaf8"/>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e8f2ff"/>
                     <XAxis dataKey="name" tick={{fontSize:11}}/><YAxis tick={{fontSize:12}}/>
                     <Tooltip/><Legend/>
-                    <Bar dataKey="Seats" fill="#e0d0f0" radius={[6,6,0,0]}/>
-                    <Bar dataKey="Enrolled" fill="#5f2c82" radius={[6,6,0,0]}/>
+                    <Bar dataKey="Seats" fill="#c5dbf5" radius={[6,6,0,0]}/>
+                    <Bar dataKey="Enrolled" fill="#0f4ea8" radius={[6,6,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1412,7 +1465,7 @@ export default function AdminDashboard() {
                     {pendingJobs.map(j => (
                       <div className="event-card" key={j.id} style={{borderLeft:'4px solid #e88c00'}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
-                          <h4 style={{margin:0}}><i className="fa-solid fa-briefcase" style={{color:'#a4508b',marginRight:6}}></i>{j.title}</h4>
+                          <h4 style={{margin:0}}><i className="fa-solid fa-briefcase" style={{color:'#00a3a3',marginRight:6}}></i>{j.title}</h4>
                           <span className="status-badge pending" style={{flexShrink:0,marginLeft:8}}>⏳ Pending</span>
                         </div>
                         {j.company  && <p><i className="fa-solid fa-building"></i> {j.company}</p>}
@@ -1421,7 +1474,7 @@ export default function AdminDashboard() {
                         {j.deadline && <p><i className="fa-solid fa-calendar-xmark"></i> Deadline: {j.deadline}</p>}
                         {j.alumni_name && <p style={{fontSize:12,color:'#888'}}><i className="fa-solid fa-user"></i> Submitted by: <strong>{j.alumni_name}</strong> ({j.alumni_email})</p>}
                         {j.description && <p style={{fontSize:13,color:'#666',marginTop:4}}>{j.description}</p>}
-                        {j.apply_link && <p style={{fontSize:12}}><i className="fa-solid fa-link" style={{color:'#5f2c82'}}></i> <a href={j.apply_link} target="_blank" rel="noreferrer" style={{color:'#5f2c82'}}>{j.apply_link}</a></p>}
+                        {j.apply_link && <p style={{fontSize:12}}><i className="fa-solid fa-link" style={{color:'#0f4ea8'}}></i> <a href={j.apply_link} target="_blank" rel="noreferrer" style={{color:'#0f4ea8'}}>{j.apply_link}</a></p>}
                         <div className="event-actions" style={{marginTop:12,gap:8}}>
                           <button className="btn-approve" onClick={() => handleApproveJob(j.id)}><i className="fa-solid fa-check"></i> Approve</button>
                           <button className="btn-delete" onClick={() => handleDeleteJob(j.id)}><i className="fa-solid fa-xmark"></i> Reject</button>
@@ -1435,7 +1488,7 @@ export default function AdminDashboard() {
               {/* Approved jobs list */}
               <div className="events-header">
                 <div className="section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-briefcase" style={{color:'#00a3a3'}}></i>
                   Active Jobs <span className="badge-count">{jobs.length}</span>
                 </div>
                 <button className="btn-add-event" onClick={() => setShowJobModal(true)}>
@@ -1448,7 +1501,7 @@ export default function AdminDashboard() {
                 <div className="events-grid" style={{marginTop:20}}>
                   {jobs.map(j => (
                     <div className="event-card" key={j.id}>
-                      <h4><i className="fa-solid fa-briefcase" style={{color:'#a4508b',marginRight:6}}></i>{j.title}</h4>
+                      <h4><i className="fa-solid fa-briefcase" style={{color:'#00a3a3',marginRight:6}}></i>{j.title}</h4>
                       {j.company  && <p><i className="fa-solid fa-building"></i> {j.company}</p>}
                       {j.location && <p><i className="fa-solid fa-location-dot"></i> {j.location}</p>}
                       <p><i className="fa-solid fa-tag"></i>
@@ -1456,7 +1509,7 @@ export default function AdminDashboard() {
                       </p>
                       {j.deadline && <p><i className="fa-solid fa-calendar-xmark"></i> Deadline: {j.deadline}</p>}
                       {j.description && <p style={{fontSize:13,color:'#666',marginTop:4}}><i className="fa-solid fa-align-left"></i> {j.description}</p>}
-                      {j.apply_link && <p style={{fontSize:12,marginTop:4}}><i className="fa-solid fa-link" style={{color:'#5f2c82',marginRight:4}}></i><a href={j.apply_link} target="_blank" rel="noreferrer" style={{color:'#5f2c82',fontSize:12}}>Application Link</a></p>}
+                      {j.apply_link && <p style={{fontSize:12,marginTop:4}}><i className="fa-solid fa-link" style={{color:'#0f4ea8',marginRight:4}}></i><a href={j.apply_link} target="_blank" rel="noreferrer" style={{color:'#0f4ea8',fontSize:12}}>Application Link</a></p>}
                       <div className="event-actions" style={{marginTop:12}}>
                         <button className="btn-delete" onClick={() => handleDeleteJob(j.id)}><i className="fa-solid fa-trash"></i> Delete</button>
                       </div>
@@ -1472,7 +1525,7 @@ export default function AdminDashboard() {
             <>
               <div className="events-header">
                 <div className="section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-list" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-list" style={{color:'#00a3a3'}}></i>
                   Existing Alumni list <span className="badge-count">{existAlumni.length}</span>
                 </div>
                 <button className="btn-add-event" onClick={() => setShowAddAlumniModal(true)}>
@@ -1481,8 +1534,8 @@ export default function AdminDashboard() {
               </div>
 
               {/* Upload Excel Section */}
-              <div style={{marginTop:20, marginBottom:30, background:'white', padding:20, borderRadius:12, boxShadow:'0 2px 8px rgba(0,0,0,0.05)', border:'1px solid #f0eaf8'}}>
-                <h4 style={{margin:'0 0 16px 0', color:'#5f2c82', fontSize:16, fontWeight:700}}>
+              <div style={{marginTop:20, marginBottom:30, background:'white', padding:20, borderRadius:12, boxShadow:'0 2px 8px rgba(0,0,0,0.05)', border:'1px solid #e8f2ff'}}>
+                <h4 style={{margin:'0 0 16px 0', color:'#0f4ea8', fontSize:16, fontWeight:700}}>
                   <i className="fa-solid fa-file-excel" style={{marginRight:8}}></i> Bulk Upload from Excel
                 </h4>
                 <form onSubmit={handleBulkUploadAlumni} style={{display:'flex', gap:12, alignItems:'flex-start', flexWrap:'wrap'}}>
@@ -1492,14 +1545,14 @@ export default function AdminDashboard() {
                       id="exist-alumni-file-input"
                       accept=".xlsx,.xls"
                       onChange={e => setExistAlumniFile(e.target.files?.[0] || null)}
-                      style={{padding:'8px 12px', border:'1.5px solid #e0d0f0', borderRadius:8, fontSize:13, fontFamily:'Inter,sans-serif', width:'100%', boxSizing:'border-box'}}
+                      style={{padding:'8px 12px', border:'1.5px solid #c5dbf5', borderRadius:8, fontSize:13, fontFamily:'Inter,sans-serif', width:'100%', boxSizing:'border-box'}}
                     />
                     <p style={{fontSize:12, color:'#888', margin:'4px 0 0 0'}}>Excel must have columns: name, student_id, email, session, phone</p>
                   </div>
                   <button
                     type="submit"
                     disabled={existAlumniUploading || !existAlumniFile}
-                    style={{padding:'10px 16px', background:existAlumniUploading ? '#ddd' : 'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white', border:'none', borderRadius:8, cursor:existAlumniUploading ? 'not-allowed' : 'pointer', fontWeight:600, fontSize:13}}
+                    style={{padding:'10px 16px', background:existAlumniUploading ? '#ddd' : 'linear-gradient(135deg,#0f4ea8,#00a3a3)', color:'white', border:'none', borderRadius:8, cursor:existAlumniUploading ? 'not-allowed' : 'pointer', fontWeight:600, fontSize:13}}
                   >
                     <i className="fa-solid fa-cloud-arrow-up" style={{marginRight:6}}></i>
                     {existAlumniUploading ? 'Uploading...' : 'Upload Excel'}
@@ -1509,13 +1562,13 @@ export default function AdminDashboard() {
 
               {/* Search Bar */}
               <div style={{marginBottom:20, position:'relative'}}>
-                <i className="fa-solid fa-magnifying-glass" style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#a4508b', fontSize:13, pointerEvents:'none'}}></i>
+                <i className="fa-solid fa-magnifying-glass" style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#00a3a3', fontSize:13, pointerEvents:'none'}}></i>
                 <input
                   type="text"
                   placeholder="Search by name, email, student ID or session..."
                   value={existAlumniSearch}
                   onChange={e => setExistAlumniSearch(e.target.value)}
-                  style={{width:'100%', padding:'10px 12px 10px 34px', border:'1.5px solid #e0d0f0', borderRadius:10, fontSize:13, fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box'}}
+                  style={{width:'100%', padding:'10px 12px 10px 34px', border:'1.5px solid #c5dbf5', borderRadius:10, fontSize:13, fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box'}}
                 />
               </div>
 
@@ -1580,7 +1633,7 @@ export default function AdminDashboard() {
             <>
               <div className="events-header">
                 <div className="section-title" style={{marginBottom:0}}>
-                  <i className="fa-solid fa-calendar-days" style={{color:'#a4508b'}}></i>
+                  <i className="fa-solid fa-calendar-days" style={{color:'#00a3a3'}}></i>
                   Events <span className="badge-count">{events.length}</span>
                 </div>
                 <button className="btn-add-event" onClick={() => setShowModal(true)}>
@@ -1593,7 +1646,7 @@ export default function AdminDashboard() {
                 <div className="events-grid">
                   {events.map(ev => (
                     <div className="event-card" key={ev.id}>
-                      <h4><i className="fa-solid fa-star" style={{color:'#a4508b',marginRight:6}}></i>{ev.title}</h4>
+                      <h4><i className="fa-solid fa-star" style={{color:'#00a3a3',marginRight:6}}></i>{ev.title}</h4>
                       <p><i className="fa-solid fa-calendar"></i> {ev.date}</p>
                       <p><i className="fa-solid fa-location-dot"></i> {ev.location}</p>
                       {ev.description && <p><i className="fa-solid fa-align-left"></i> {ev.description}</p>}
@@ -1602,15 +1655,15 @@ export default function AdminDashboard() {
                       <p style={{marginTop:4}}>
                         <span style={{display:'inline-block',padding:'2px 10px',borderRadius:20,fontSize:11,fontWeight:700,
                           background: ev.audience==='alumni' ? '#fde8f5' : ev.audience==='students' ? '#e8f4fd' : '#e8fde8',
-                          color: ev.audience==='alumni' ? '#a4508b' : ev.audience==='students' ? '#1565c0' : '#2e7d32'}}>
+                          color: ev.audience==='alumni' ? '#00a3a3' : ev.audience==='students' ? '#1565c0' : '#2e7d32'}}>
                           {ev.audience==='alumni' ? '👤 Alumni Only' : ev.audience==='students' ? '🎓 Students Only' : '👥 Both'}
                         </span>
                       </p>
                       <div className="event-actions">
-                        <button className="btn-approve" onClick={() => handleViewAttendees(ev)} style={{background:'#5f2c82',color:'white'}}>
+                        <button className="btn-approve" onClick={() => handleViewAttendees(ev)} style={{background:'#0f4ea8',color:'white'}}>
                           <i className="fa-solid fa-users"></i> Attendees
                         </button>
-                        <button className="btn-approve" onClick={() => { setEditingEvent({...ev, audience: ev.audience||'both'}); setShowEditModal(true) }} style={{background:'#a4508b',color:'white'}}>
+                        <button className="btn-approve" onClick={() => { setEditingEvent({...ev, audience: ev.audience||'both'}); setShowEditModal(true) }} style={{background:'#00a3a3',color:'white'}}>
                           <i className="fa-solid fa-pen"></i> Edit
                         </button>
                         <button className="btn-delete" onClick={() => handleDeleteEvent(ev.id)}><i className="fa-solid fa-trash"></i> Delete</button>
@@ -1628,7 +1681,7 @@ export default function AdminDashboard() {
       {/* ADD ALUMNI MODAL */}
       <Modal show={showAddAlumniModal} onHide={() => setShowAddAlumniModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-user-plus" style={{color:'#a4508b'}}></i> Add Alumni Manually</h3>
+            <h3><i className="fa-solid fa-user-plus" style={{color:'#00a3a3'}}></i> Add Alumni Manually</h3>
             <form onSubmit={handleAddAlumni}>
               <label>Name *</label>
               <input type="text" placeholder="e.g., John Doe" value={newAlumniForm.name} onChange={e=>setNewAlumniForm({...newAlumniForm,name:e.target.value})} required/>
@@ -1641,7 +1694,7 @@ export default function AdminDashboard() {
               <label>Phone Number *</label>
               <input type="tel" placeholder="e.g., +880 1712345678" value={newAlumniForm.phone} onChange={e=>setNewAlumniForm({...newAlumniForm,phone:e.target.value})} required/>
               <label>Department (optional)</label>
-              <select style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newAlumniForm.department} onChange={e=>setNewAlumniForm({...newAlumniForm,department:e.target.value})}>
+              <select style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newAlumniForm.department} onChange={e=>setNewAlumniForm({...newAlumniForm,department:e.target.value})}>
                 <option>ICE</option><option>EEE</option><option>ME</option><option>CE</option><option>Other</option>
               </select>
               <div className="modal-actions">
@@ -1655,7 +1708,7 @@ export default function AdminDashboard() {
       {/* ADD JOB MODAL */}
       <Modal show={showJobModal} onHide={() => setShowJobModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i> Post New Job</h3>
+            <h3><i className="fa-solid fa-briefcase" style={{color:'#00a3a3'}}></i> Post New Job</h3>
             <form onSubmit={handleAddJob}>
               <label>Job Title</label>
               <input type="text" placeholder="e.g., Software Engineer" value={newJob.title} onChange={e=>setNewJob({...newJob,title:e.target.value})} required/>
@@ -1664,7 +1717,7 @@ export default function AdminDashboard() {
               <label>Location</label>
               <input type="text" placeholder="e.g., Dhaka, Bangladesh" value={newJob.location} onChange={e=>setNewJob({...newJob,location:e.target.value})}/>
               <label>Type</label>
-              <select style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newJob.type} onChange={e=>setNewJob({...newJob,type:e.target.value})}>
+              <select style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newJob.type} onChange={e=>setNewJob({...newJob,type:e.target.value})}>
                 <option>Full-time</option><option>Part-time</option><option>Remote</option><option>Internship</option>
               </select>
               <label>Application Deadline</label>
@@ -1686,7 +1739,7 @@ export default function AdminDashboard() {
       <Modal show={showAttendeesModal} onHide={() => { setShowAttendeesModal(false); setAttendeesSearch('') }} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
             <h3 style={{marginBottom:4}}>
-              <i className="fa-solid fa-users" style={{color:'#a4508b',marginRight:8}}></i>
+              <i className="fa-solid fa-users" style={{color:'#00a3a3',marginRight:8}}></i>
               Attendees — {attendeesEvent.title}
             </h3>
             <p style={{fontSize:13,color:'#888',marginBottom:16}}>
@@ -1695,16 +1748,16 @@ export default function AdminDashboard() {
             </p>
             {/* Search Bar */}
             <div style={{marginBottom:16,position:'relative'}}>
-              <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#a4508b',fontSize:13,pointerEvents:'none'}}></i>
+              <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#00a3a3',fontSize:13,pointerEvents:'none'}}></i>
               <input
                 type="text"
                 placeholder="Search by name, student ID, session or transaction ID…"
                 onChange={e => setAttendeesSearch(e.target.value)}
-                style={{width:'100%',padding:'9px 12px 9px 34px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:13,fontFamily:'Inter,sans-serif',outline:'none',boxSizing:'border-box'}}
+                style={{width:'100%',padding:'9px 12px 9px 34px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:13,fontFamily:'Inter,sans-serif',outline:'none',boxSizing:'border-box'}}
               />
             </div>
             {attendeesLoading ? (
-              <div style={{textAlign:'center',padding:'40px 0',color:'#a4508b'}}>
+              <div style={{textAlign:'center',padding:'40px 0',color:'#00a3a3'}}>
                 <i className="fa-solid fa-spinner fa-spin" style={{fontSize:28}}></i>
               </div>
             ) : attendees.length === 0 ? (
@@ -1760,7 +1813,7 @@ export default function AdminDashboard() {
       <Modal show={showTrainAttendeesModal} onHide={() => { setShowTrainAttendeesModal(false); setTrainAttendeesSearch('') }} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
             <h3 style={{marginBottom:4}}>
-              <i className="fa-solid fa-users" style={{color:'#a4508b',marginRight:8}}></i>
+              <i className="fa-solid fa-users" style={{color:'#00a3a3',marginRight:8}}></i>
               Attendees — {trainAttendeesTraining.title}
             </h3>
             <p style={{fontSize:13,color:'#888',marginBottom:16}}>
@@ -1769,16 +1822,16 @@ export default function AdminDashboard() {
             </p>
             {/* Search Bar */}
             <div style={{marginBottom:16,position:'relative'}}>
-              <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#a4508b',fontSize:13,pointerEvents:'none'}}></i>
+              <i className="fa-solid fa-magnifying-glass" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#00a3a3',fontSize:13,pointerEvents:'none'}}></i>
               <input
                 type="text"
                 placeholder="Search by name, student ID, session or transaction ID…"
                 onChange={e => setTrainAttendeesSearch(e.target.value)}
-                style={{width:'100%',padding:'9px 12px 9px 34px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:13,fontFamily:'Inter,sans-serif',outline:'none',boxSizing:'border-box'}}
+                style={{width:'100%',padding:'9px 12px 9px 34px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:13,fontFamily:'Inter,sans-serif',outline:'none',boxSizing:'border-box'}}
               />
             </div>
             {trainAttendeesLoading ? (
-              <div style={{textAlign:'center',padding:'40px 0',color:'#a4508b'}}>
+              <div style={{textAlign:'center',padding:'40px 0',color:'#00a3a3'}}>
                 <i className="fa-solid fa-spinner fa-spin" style={{fontSize:28}}></i>
               </div>
             ) : trainAttendees.length === 0 ? (
@@ -1832,7 +1885,7 @@ export default function AdminDashboard() {
       {/* ADD EVENT MODAL */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-calendar-plus" style={{color:'#a4508b'}}></i> Add New Event</h3>
+            <h3><i className="fa-solid fa-calendar-plus" style={{color:'#00a3a3'}}></i> Add New Event</h3>
             <form onSubmit={handleAddEvent}>
               <label>Event Title</label>
               <input type="text" placeholder="e.g., Annual Alumni Reunion" value={newEvent.title} onChange={e=>setNewEvent({...newEvent,title:e.target.value})} required/>
@@ -1847,7 +1900,7 @@ export default function AdminDashboard() {
               <label>Payment Account / bKash / Bank Info (shown to alumni)</label>
               <input type="text" placeholder="e.g., bKash: 01712345678 (Send Money)" value={newEvent.payment_account} onChange={e=>setNewEvent({...newEvent,payment_account:e.target.value})}/>
               <label>Event Audience</label>
-              <select value={newEvent.audience} onChange={e=>setNewEvent({...newEvent,audience:e.target.value})} style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}}>
+              <select value={newEvent.audience} onChange={e=>setNewEvent({...newEvent,audience:e.target.value})} style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}}>
                 <option value="both">Both (Alumni &amp; Students)</option>
                 <option value="alumni">Alumni Only</option>
                 <option value="students">Students Only</option>
@@ -1864,7 +1917,7 @@ export default function AdminDashboard() {
       {editingEvent && (
       <Modal show={showEditModal} onHide={() => setShowEditModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-pen" style={{color:'#a4508b'}}></i> Edit Event</h3>
+            <h3><i className="fa-solid fa-pen" style={{color:'#00a3a3'}}></i> Edit Event</h3>
             <form onSubmit={handleUpdateEvent}>
               <label>Event Title</label>
               <input type="text" placeholder="e.g., Annual Alumni Reunion" value={editingEvent.title} onChange={e=>setEditingEvent({...editingEvent,title:e.target.value})} required/>
@@ -1879,7 +1932,7 @@ export default function AdminDashboard() {
               <label>Payment Account / bKash / Bank Info</label>
               <input type="text" placeholder="e.g., bKash: 01712345678" value={editingEvent.payment_account||''} onChange={e=>setEditingEvent({...editingEvent,payment_account:e.target.value})}/>
               <label>Event Audience</label>
-              <select value={editingEvent.audience||'both'} onChange={e=>setEditingEvent({...editingEvent,audience:e.target.value})} style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}}>
+              <select value={editingEvent.audience||'both'} onChange={e=>setEditingEvent({...editingEvent,audience:e.target.value})} style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}}>
                 <option value="both">Both (Alumni &amp; Students)</option>
                 <option value="alumni">Alumni Only</option>
                 <option value="students">Students Only</option>
@@ -1893,26 +1946,45 @@ export default function AdminDashboard() {
       </Modal>
       )}
 
-      {/* ADD TRANSACTION MODAL */}
-      <Modal show={showTxModal} onHide={() => setShowTxModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
+      {/* CREATE FUND REQUEST MODAL */}
+      <Modal show={showFundReqModal} onHide={() => setShowFundReqModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-money-bill-wave" style={{color:'#a4508b'}}></i> Add Transaction</h3>
-            <form onSubmit={handleAddTx}>
-              <label>Donor Name</label>
-              <input type="text" placeholder="e.g., Tanvir Hossain" value={newTx.donor} onChange={e=>setNewTx({...newTx,donor:e.target.value})} required/>
-              <label>Type</label>
-              <select style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newTx.type} onChange={e=>setNewTx({...newTx,type:e.target.value})}>
-                <option>Donation</option><option>Sponsorship</option><option>Membership Fee</option>
+            <h3><i className="fa-solid fa-file-circle-plus" style={{color:'#00a3a3'}}></i> Create Fund Request</h3>
+            <form onSubmit={handleAddFundRequest}>
+              <label>Request Title</label>
+              <input type="text" placeholder="e.g., Support Alumni Career Fair 2026" value={newFundReq.title} onChange={e=>setNewFundReq({...newFundReq,title:e.target.value})} required/>
+              <label>Why fund is needed?</label>
+              <textarea placeholder="Explain purpose clearly for alumni donors..." value={newFundReq.purpose} onChange={e=>setNewFundReq({...newFundReq,purpose:e.target.value})} required/>
+              <label>Target Amount (Tk)</label>
+              <input type="number" min="1" placeholder="e.g., 50000" value={newFundReq.target_amount} onChange={e=>setNewFundReq({...newFundReq,target_amount:e.target.value})} required/>
+              <label>Payment Option</label>
+              <select style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newFundReq.payment_option} onChange={e=>setNewFundReq({...newFundReq,payment_option:e.target.value})}>
+                <option value="both">bKash + Bank</option>
+                <option value="bkash">bKash only</option>
+                <option value="bank">Bank only</option>
               </select>
-              <label>Amount (\u09f3)</label>
-              <input type="number" placeholder="e.g., 5000" value={newTx.amount} onChange={e=>setNewTx({...newTx,amount:e.target.value})} required/>
-              <label>Date</label>
-              <input type="date" value={newTx.date} onChange={e=>setNewTx({...newTx,date:e.target.value})} required/>
-              <label>Note (optional)</label>
-              <input type="text" placeholder="Short note..." value={newTx.note} onChange={e=>setNewTx({...newTx,note:e.target.value})}/>
+
+              {(newFundReq.payment_option === 'bkash' || newFundReq.payment_option === 'both') && (
+                <>
+                  <label>bKash Number</label>
+                  <input type="text" placeholder="e.g., 017XXXXXXXX" value={newFundReq.bkash_number} onChange={e=>setNewFundReq({...newFundReq,bkash_number:e.target.value})} required={newFundReq.payment_option !== 'bank'} />
+                </>
+              )}
+
+              {(newFundReq.payment_option === 'bank' || newFundReq.payment_option === 'both') && (
+                <>
+                  <label>Bank Name</label>
+                  <input type="text" placeholder="e.g., Sonali Bank" value={newFundReq.bank_name} onChange={e=>setNewFundReq({...newFundReq,bank_name:e.target.value})} required={newFundReq.payment_option !== 'bkash'} />
+                  <label>Bank Account Name</label>
+                  <input type="text" placeholder="Account holder name" value={newFundReq.bank_account_name} onChange={e=>setNewFundReq({...newFundReq,bank_account_name:e.target.value})} required={newFundReq.payment_option !== 'bkash'} />
+                  <label>Bank Account Number</label>
+                  <input type="text" placeholder="Account number" value={newFundReq.bank_account_number} onChange={e=>setNewFundReq({...newFundReq,bank_account_number:e.target.value})} required={newFundReq.payment_option !== 'bkash'} />
+                </>
+              )}
+
               <div className="modal-actions">
-                <button type="submit" className="btn-primary-admin"><i className="fa-solid fa-plus"></i> Add</button>
-                <button type="button" className="btn-cancel" onClick={()=>setShowTxModal(false)}>Cancel</button>
+                <button type="submit" className="btn-primary-admin"><i className="fa-solid fa-plus"></i> Publish Request</button>
+                <button type="button" className="btn-cancel" onClick={()=>setShowFundReqModal(false)}>Cancel</button>
               </div>
             </form>
         </div>
@@ -1921,7 +1993,7 @@ export default function AdminDashboard() {
       {/* ADD TRAINING MODAL */}
       <Modal show={showTrainModal} onHide={() => setShowTrainModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box">
-            <h3><i className="fa-solid fa-chalkboard-user" style={{color:'#a4508b'}}></i> Add Training</h3>
+            <h3><i className="fa-solid fa-chalkboard-user" style={{color:'#00a3a3'}}></i> Add Training</h3>
             <form onSubmit={handleAddTraining}>
               <label>Training Title</label>
               <input type="text" placeholder="e.g., React Bootcamp" value={newTraining.title} onChange={e=>setNewTraining({...newTraining,title:e.target.value})} required/>
@@ -1932,7 +2004,7 @@ export default function AdminDashboard() {
               <label>Total Seats</label>
               <input type="number" placeholder="e.g., 30" value={newTraining.seats} onChange={e=>setNewTraining({...newTraining,seats:e.target.value})} required/>
               <label>Status</label>
-              <select style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newTraining.status} onChange={e=>setNewTraining({...newTraining,status:e.target.value})}>
+              <select style={{padding:'11px 14px',border:'1.5px solid #c5dbf5',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newTraining.status} onChange={e=>setNewTraining({...newTraining,status:e.target.value})}>
                 <option>Upcoming</option><option>Ongoing</option><option>Full</option><option>Completed</option>
               </select>
               <label>Registration Fee (৳) <span style={{color:'#aaa',fontWeight:400}}>(optional)</span></label>
@@ -1951,7 +2023,7 @@ export default function AdminDashboard() {
       <Modal show={showEmailListModal} onHide={() => setShowEmailListModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
           <h3 style={{marginBottom:4}}>
-            <i className="fa-solid fa-list-check" style={{color:'#a4508b',marginRight:8}}></i>
+            <i className="fa-solid fa-list-check" style={{color:'#00a3a3',marginRight:8}}></i>
             Selected Recipient List
           </h3>
           <p style={{fontSize:13,color:'#888',marginBottom:14}}>
@@ -1997,7 +2069,7 @@ export default function AdminDashboard() {
       <Modal show={showSmsListModal} onHide={() => setShowSmsListModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
           <h3 style={{marginBottom:4}}>
-            <i className="fa-solid fa-comment-dots" style={{color:'#a4508b',marginRight:8}}></i>
+            <i className="fa-solid fa-comment-dots" style={{color:'#00a3a3',marginRight:8}}></i>
             SMS Recipient List
           </h3>
           <p style={{fontSize:13,color:'#888',marginBottom:14}}>
@@ -2044,12 +2116,12 @@ export default function AdminDashboard() {
       <Modal show={showExcelDataModal} onHide={() => setShowExcelDataModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
         <div className="modal-box" style={{maxHeight:'80vh',overflowY:'auto'}}>
           <h3>
-            <i className="fa-solid fa-table" style={{color:'#a4508b',marginRight:8}}></i>
+            <i className="fa-solid fa-table" style={{color:'#00a3a3',marginRight:8}}></i>
             {excelData.title} ({excelData.rows?.length || 0} records)
           </h3>
           
           {excelDataLoading ? (
-            <div style={{textAlign:'center',padding:'40px 0',color:'#a4508b'}}>
+            <div style={{textAlign:'center',padding:'40px 0',color:'#00a3a3'}}>
               <i className="fa-solid fa-spinner fa-spin" style={{fontSize:28}}></i>
               <p style={{marginTop:12}}>Loading Excel data...</p>
             </div>
@@ -2109,8 +2181,8 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
             display:'flex', alignItems:'center', gap:8,
             padding:'10px 22px', borderRadius:12, fontWeight:700, fontSize:14,
             cursor:'pointer', fontFamily:'Inter,sans-serif', border:'none',
-            background: pendingTab === 'alumni' ? 'linear-gradient(135deg,#5f2c82,#a4508b)' : '#f0eaff',
-            color: pendingTab === 'alumni' ? 'white' : '#5f2c82',
+            background: pendingTab === 'alumni' ? 'linear-gradient(135deg,#0f4ea8,#00a3a3)' : '#f0eaff',
+            color: pendingTab === 'alumni' ? 'white' : '#0f4ea8',
             boxShadow: pendingTab === 'alumni' ? '0 4px 14px rgba(95,44,130,0.3)' : 'none',
             transition:'0.2s',
           }}
@@ -2118,7 +2190,7 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
           <i className="fa-solid fa-user"></i> Alumni Approvals
           <span style={{
             background: pendingTab === 'alumni' ? 'rgba(255,255,255,0.25)' : '#d4b8f0',
-            color: pendingTab === 'alumni' ? 'white' : '#5f2c82',
+            color: pendingTab === 'alumni' ? 'white' : '#0f4ea8',
             borderRadius:20, padding:'1px 9px', fontSize:12, fontWeight:700
           }}>{alumniPending.length}</span>
         </button>
@@ -2128,8 +2200,8 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
             display:'flex', alignItems:'center', gap:8,
             padding:'10px 22px', borderRadius:12, fontWeight:700, fontSize:14,
             cursor:'pointer', fontFamily:'Inter,sans-serif', border:'none',
-            background: pendingTab === 'student' ? 'linear-gradient(135deg,#5f2c82,#a4508b)' : '#f0eaff',
-            color: pendingTab === 'student' ? 'white' : '#5f2c82',
+            background: pendingTab === 'student' ? 'linear-gradient(135deg,#0f4ea8,#00a3a3)' : '#f0eaff',
+            color: pendingTab === 'student' ? 'white' : '#0f4ea8',
             boxShadow: pendingTab === 'student' ? '0 4px 14px rgba(95,44,130,0.3)' : 'none',
             transition:'0.2s',
           }}
@@ -2137,7 +2209,7 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
           <i className="fa-solid fa-user-graduate"></i> Student Approvals
           <span style={{
             background: pendingTab === 'student' ? 'rgba(255,255,255,0.25)' : '#d4b8f0',
-            color: pendingTab === 'student' ? 'white' : '#5f2c82',
+            color: pendingTab === 'student' ? 'white' : '#0f4ea8',
             borderRadius:20, padding:'1px 9px', fontSize:12, fontWeight:700
           }}>{studentPending.length}</span>
         </button>
@@ -2163,7 +2235,7 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
       </div>
 
       <div className="section-title">
-        <i className="fa-solid fa-clock" style={{color:'#a4508b'}}></i>
+        <i className="fa-solid fa-clock" style={{color:'#00a3a3'}}></i>
         {pendingTab === 'alumni' ? 'Alumni' : pendingTab === 'student' ? 'Student' : 'Alumni Upgrade'} Pending Approvals
         <span className="badge-count">{rows.length}</span>
       </div>
@@ -2199,7 +2271,7 @@ function PendingCards({ rows, onApprove, onReject }) {
             overflow:'hidden', border:'1.5px solid #ece4f8', display:'flex', flexDirection:'column'
           }}>
             {/* Card header */}
-            <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)', padding:'18px 22px', display:'flex', alignItems:'center', gap:16}}>
+            <div style={{background:'linear-gradient(135deg,#0f4ea8,#00a3a3)', padding:'18px 22px', display:'flex', alignItems:'center', gap:16}}>
               {p.photo_url
                 ? <img src={p.photo_url} alt={p.name} onClick={() => setLightbox(p.photo_url)}
                     style={{width:64, height:64, borderRadius:'50%', objectFit:'cover', border:'3px solid #fff', cursor:'zoom-in', flexShrink:0}} />
@@ -2236,7 +2308,7 @@ function PendingCards({ rows, onApprove, onReject }) {
                 ['fa-briefcase',       'Designation',     p.designation],
               ].map(([icon, label, val]) => (
                 <div key={label} style={{display:'flex', alignItems:'flex-start', gap:8}}>
-                  <i className={`fa-solid ${icon}`} style={{color:'#a4508b', fontSize:13, marginTop:2, width:14, flexShrink:0}}></i>
+                  <i className={`fa-solid ${icon}`} style={{color:'#00a3a3', fontSize:13, marginTop:2, width:14, flexShrink:0}}></i>
                   <div>
                     <div style={{fontSize:10, color:'#aaa', fontWeight:600, textTransform:'uppercase', letterSpacing:.5}}>{label}</div>
                     <div style={{fontSize:13, color:'#333', fontWeight:500}}>{val || '—'}</div>
@@ -2249,13 +2321,13 @@ function PendingCards({ rows, onApprove, onReject }) {
             <div style={{padding:'10px 22px 14px', display:'flex', gap:14}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:.5, marginBottom:6}}>
-                  <i className="fa-solid fa-user" style={{marginRight:5, color:'#a4508b'}}></i>Profile Photo
+                  <i className="fa-solid fa-user" style={{marginRight:5, color:'#00a3a3'}}></i>Profile Photo
                 </div>
                 {p.photo_url
                   ? <img src={p.photo_url} alt="Profile" onClick={() => setLightbox(p.photo_url)}
                       style={{width:'100%', height:120, objectFit:'cover', borderRadius:10, cursor:'zoom-in',
                         border:'2px solid #ece4f8', boxShadow:'0 2px 8px rgba(95,44,130,0.08)'}} />
-                  : <div style={{width:'100%', height:120, borderRadius:10, background:'#f4f0f8',
+                  : <div style={{width:'100%', height:120, borderRadius:10, background:'#edf6ff',
                       display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6,
                       border:'2px dashed #d0bfef', color:'#c0a8e4', fontSize:12}}>
                       <i className="fa-solid fa-image" style={{fontSize:24}}></i>Not uploaded
@@ -2264,13 +2336,13 @@ function PendingCards({ rows, onApprove, onReject }) {
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:.5, marginBottom:6}}>
-                  <i className="fa-solid fa-id-card" style={{marginRight:5, color:'#a4508b'}}></i>ID Card Photo
+                  <i className="fa-solid fa-id-card" style={{marginRight:5, color:'#00a3a3'}}></i>ID Card Photo
                 </div>
                 {p.id_photo_url
                   ? <img src={p.id_photo_url} alt="ID Card" onClick={() => setLightbox(p.id_photo_url)}
                       style={{width:'100%', height:120, objectFit:'cover', borderRadius:10, cursor:'zoom-in',
                         border:'2px solid #ece4f8', boxShadow:'0 2px 8px rgba(95,44,130,0.08)'}} />
-                  : <div style={{width:'100%', height:120, borderRadius:10, background:'#f4f0f8',
+                  : <div style={{width:'100%', height:120, borderRadius:10, background:'#edf6ff',
                       display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6,
                       border:'2px dashed #d0bfef', color:'#c0a8e4', fontSize:12}}>
                       <i className="fa-solid fa-id-card" style={{fontSize:24}}></i>Not uploaded

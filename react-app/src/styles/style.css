@@ -9,11 +9,34 @@ html, body, #root {
   min-height: 100vh;
 }
 
+:root {
+  --app-watermark-logo: url('/assets/ice-logo-watermark.png');
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background: linear-gradient(135deg, #5f2c82, #a4508b);
   color: #333;
   overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: var(--app-watermark-logo);
+  background-repeat: no-repeat;
+  background-position: center 52%;
+  background-size: min(60vmin, 560px);
+  opacity: 0.095;
+  mix-blend-mode: multiply;
+}
+
+#root {
+  position: relative;
+  z-index: 2;
 }
 
 /* NAVBAR */

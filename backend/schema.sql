@@ -96,7 +96,29 @@ CREATE TABLE IF NOT EXISTS fund_transactions (
     amount DECIMAL(12,2) NOT NULL,
     date   DATE         NOT NULL,
     note   TEXT,
+    request_id INT DEFAULT NULL,
+    alumni_id INT DEFAULT NULL,
+    payment_method VARCHAR(30) DEFAULT NULL,
+    payment_reference VARCHAR(120) DEFAULT NULL,
+    created_by_role ENUM('admin','alumni') DEFAULT 'alumni',
+    status  ENUM('pending','paid','rejected') DEFAULT 'paid',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fund collection requests created by admin
+CREATE TABLE IF NOT EXISTS fund_requests (
+    id                   INT AUTO_INCREMENT PRIMARY KEY,
+    title                VARCHAR(200) NOT NULL,
+    purpose              TEXT NOT NULL,
+    target_amount        DECIMAL(12,2) NOT NULL,
+    payment_option       ENUM('bkash','bank','both') DEFAULT 'both',
+    bkash_number         VARCHAR(30) DEFAULT NULL,
+    bank_account_name    VARCHAR(150) DEFAULT NULL,
+    bank_account_number  VARCHAR(80) DEFAULT NULL,
+    bank_name            VARCHAR(150) DEFAULT NULL,
+    status               ENUM('open','closed') DEFAULT 'open',
+    created_by           VARCHAR(100) DEFAULT 'admin',
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Trainings
