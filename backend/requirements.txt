@@ -1,5 +1,6 @@
 flask>=3.0.3
 flask-cors>=4.0.0
-pymysql>=1.4.6
+pymysql>=1.1.0
 werkzeug>=3.0.3
 gunicorn>=22.0.0
+openpyxl>=3.0.0

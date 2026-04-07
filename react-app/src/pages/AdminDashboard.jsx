@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from 'react-bootstrap'
 import {
@@ -12,11 +12,15 @@ import {
   getTransactions, addTransaction, deleteTransaction,
   getTrainings, addTraining, deleteTraining,
   getJobs, addJob, deleteJob, getPendingJobs, approveJob,
+  getExistingLists, uploadExistingList, deleteExistingList, getExistingListData,
+  getExistAlumni, addExistAlumni, bulkAddExistAlumni, deleteExistAlumni,
   getStats,
   getEventAttendees,
   getTrainingAttendees,
   getUpgradeRequests, approveUpgrade, rejectUpgrade,
   updateEvent,
+  sendAdminEmail,
+  getEmailLogs,
 } from '../services/api'
 
 // These static arrays remain for chart demo data
@@ -51,6 +55,7 @@ export default function AdminDashboard() {
   const [trainings,    setTrainings]    = useState([])
   const [jobs,         setJobs]         = useState([])
   const [pendingJobs,  setPendingJobs]  = useState([])
+  const [existingLists, setExistingLists] = useState([])
   const [upgradeRequests, setUpgradeRequests] = useState([])
   const [stats,        setStats]        = useState({ total_alumni:0, total_students:0, pending:0, events:0, total_funds:0, total_jobs:0 })
   const [loading,      setLoading]      = useState(true)
@@ -78,14 +83,49 @@ export default function AdminDashboard() {
   const [searchQuery,    setSearchQuery]    = useState('')
   const [searchField,    setSearchField]    = useState('name')
   const [pendingTab,     setPendingTab]     = useState('alumni')
+  const [emailAudience,  setEmailAudience]  = useState('all')
+  const [selectedSessions, setSelectedSessions] = useState([])
+  const [emailSearch, setEmailSearch] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailPreheader, setEmailPreheader] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [emailCallToAction, setEmailCallToAction] = useState('Visit AlumniConnect')
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailLogs, setEmailLogs] = useState([])
+  const [emailLogLoading, setEmailLogLoading] = useState(false)
+  const [showEmailListModal, setShowEmailListModal] = useState(false)
+  const [smsAudience, setSmsAudience] = useState('all')
+  const [selectedSmsSessions, setSelectedSmsSessions] = useState([])
+  const [smsSearch, setSmsSearch] = useState('')
+  const [smsTemplateName, setSmsTemplateName] = useState('General Notice')
+  const [smsMessage, setSmsMessage] = useState('')
+  const [smsSenderName, setSmsSenderName] = useState('AlumniConnect Admin')
+  const [showSmsListModal, setShowSmsListModal] = useState(false)
+  const [existingListFile, setExistingListFile] = useState(null)
+  const [existingListUploading, setExistingListUploading] = useState(false)
+  const [showExcelDataModal, setShowExcelDataModal] = useState(false)
+  const [excelDataLoading, setExcelDataLoading] = useState(false)
+  const [excelData, setExcelData] = useState({headers: [], rows: []})
+  const [selectedExcelListId, setSelectedExcelListId] = useState(null)
+  
+  // Existing Alumni list state
+  const [existAlumni, setExistAlumni] = useState([])
+  const [existAlumniLoading, setExistAlumniLoading] = useState(false)
+  const [showAddAlumniModal, setShowAddAlumniModal] = useState(false)
+  const [newAlumniForm, setNewAlumniForm] = useState({ name:'', student_id:'', session:'', email:'', phone:'', department:'ICE' })
+  const [existAlumniFile, setExistAlumniFile] = useState(null)
+  const [existAlumniUploading, setExistAlumniUploading] = useState(false)
+  const [existAlumniSearch, setExistAlumniSearch] = useState('')
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [pd, al, st, ev, tx, tr, jb, stats_, pj, ur] = await Promise.all([
+      const [pd, al, st, ev, tx, tr, jb, stats_, pj, ur, el, ea] = await Promise.all([
         getPending(), getAlumni(), getStudents(), getEvents(),
         getTransactions(), getTrainings(), getJobs(), getStats(), getPendingJobs(),
         getUpgradeRequests(),
+        getExistingLists(),
+        getExistAlumni(),
       ])
       if (pd.ok) setPending(pd.data)
       if (al.ok) setAlumni(al.data)
@@ -97,11 +137,26 @@ export default function AdminDashboard() {
       if (stats_.ok) setStats(stats_.data)
       if (pj.ok) setPendingJobs(pj.data)
       if (ur.ok) setUpgradeRequests(ur.data)
+      if (el.ok) setExistingLists(el.data)
+      if (ea.ok) setExistAlumni(ea.data)
     } catch (_) {}
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  const fetchEmailLogs = useCallback(async () => {
+    setEmailLogLoading(true)
+    try {
+      const { ok, data } = await getEmailLogs()
+      if (ok) setEmailLogs(Array.isArray(data) ? data : [])
+    } catch (_) {}
+    setEmailLogLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (activeView === 'email-center') fetchEmailLogs()
+  }, [activeView, fetchEmailLogs])
 
   const handleApprove = async (id) => {
     const { ok } = await approveAlumni(id)
@@ -272,8 +327,306 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleUploadExistingList = async (e) => {
+    e.preventDefault()
+    if (!existingListFile) {
+      alert('Please choose an Excel file first.')
+      return
+    }
+
+    const lowerName = String(existingListFile.name || '').toLowerCase()
+    if (!(lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls'))) {
+      alert('Only .xlsx or .xls files are supported.')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', existingListFile)
+
+    setExistingListUploading(true)
+    const { ok, data } = await uploadExistingList(formData)
+    setExistingListUploading(false)
+
+    if (!ok) {
+      alert(data?.message || 'Upload failed. Please try again.')
+      return
+    }
+
+    setExistingListFile(null)
+    const fileInput = document.getElementById('existing-list-file-input')
+    if (fileInput) fileInput.value = ''
+
+    const { ok: listOk, data: listData } = await getExistingLists()
+    if (listOk) {
+      setExistingLists(Array.isArray(listData) ? listData : [])
+    }
+    alert('Existing list uploaded successfully.')
+  }
+
+  const handleDeleteExistingList = async (id) => {
+    const confirmed = window.confirm('Delete this list permanently?')
+    if (!confirmed) return
+
+    const { ok, data } = await deleteExistingList(id)
+    if (!ok) {
+      alert(data?.message || 'Could not delete list.')
+      return
+    }
+
+    setExistingLists((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const handleViewExcelData = async (id) => {
+    setSelectedExcelListId(id)
+    setExcelDataLoading(true)
+    const { ok, data } = await getExistingListData(id)
+    setExcelDataLoading(false)
+    
+    if (!ok) {
+      alert(data?.message || 'Could not load Excel data.')
+      return
+    }
+    
+    setExcelData({
+      headers: data.headers || [],
+      rows: data.rows || [],
+      total: data.total || 0,
+      title: data.title || 'Excel Data'
+    })
+    setShowExcelDataModal(true)
+  }
+
+  // ─── Existing Alumni Handlers ───────────────────────
+  const handleAddAlumni = async (e) => {
+    e.preventDefault()
+    if (!newAlumniForm.name || !newAlumniForm.student_id || !newAlumniForm.email || !newAlumniForm.session || !newAlumniForm.phone) {
+      alert('Please fill in all required fields')
+      return
+    }
+
+    const { ok, data } = await addExistAlumni(newAlumniForm)
+    if (!ok) {
+      alert(data?.message || 'Failed to add alumni')
+      return
+    }
+
+    setExistAlumni(prev => [{ ...newAlumniForm, id: data.id, created_at: new Date().toISOString() }, ...prev])
+    setNewAlumniForm({ name:'', student_id:'', session:'', email:'', phone:'', department:'ICE' })
+    setShowAddAlumniModal(false)
+    alert('Alumni added successfully')
+  }
+
+  const handleDeleteExistAlumni = async (id) => {
+    if (!window.confirm('Delete this alumni record?')) return
+    
+    const { ok } = await deleteExistAlumni(id)
+    if (ok) {
+      setExistAlumni(prev => prev.filter(a => a.id !== id))
+    } else {
+      alert('Failed to delete alumni')
+    }
+  }
+
+  const handleBulkUploadAlumni = async (e) => {
+    e.preventDefault()
+    if (!existAlumniFile) {
+      alert('Please select an Excel file')
+      return
+    }
+
+    const lowerName = String(existAlumniFile.name || '').toLowerCase()
+    if (!(lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls'))) {
+      alert('Only .xlsx or .xls files are supported.')
+      return
+    }
+
+    setExistAlumniUploading(true)
+    const formData = new FormData()
+    formData.append('file', existAlumniFile)
+    
+    const { ok: listOk, data: listData } = await uploadExistingList(formData)
+    
+    if (!listOk) {
+      alert(listData?.message || 'Upload failed')
+      setExistAlumniUploading(false)
+      return
+    }
+
+    const listId = listData.id
+    const { ok: dataOk, data: excelData } = await getExistingListData(listId)
+    setExistAlumniUploading(false)
+
+    if (!dataOk) {
+      alert('Could not read Excel file data')
+      return
+    }
+
+    // Extract name, student_id, session, email, phone from Excel rows
+    const alumniRecords = excelData.rows.map(row => ({
+      name: row.name || row.Name || row['Alumni Name'] || '',
+      student_id: row.student_id || row['Student ID'] || row['ID'] || row.id || '',
+      email: row.email || row.Email || '',
+      session: row.session || row.Session || '',
+      phone: row.phone || row.Phone || '',
+      department: row.department || row.Department || 'ICE'
+    })).filter(r => r.name && r.student_id && r.email && r.session && r.phone)
+
+    if (alumniRecords.length === 0) {
+      alert('No valid alumni records found in Excel file. Please ensure columns include: name, student_id, email, session, phone')
+      return
+    }
+
+    const { ok: addOk, data: addData } = await bulkAddExistAlumni(alumniRecords)
+    if (!addOk) {
+      alert(addData?.message || 'Failed to add alumni records')
+      return
+    }
+
+    alert(`${addData.added} alumni added successfully${addData.errors?.length > 0 ? `, ${addData.errors.length} failed` : ''}`)
+    
+    // Refresh the list
+    const { ok: refOk, data: refData } = await getExistAlumni()
+    if (refOk) setExistAlumni(Array.isArray(refData) ? refData : [])
+    
+    setExistAlumniFile(null)
+    const fileInput = document.getElementById('exist-alumni-file-input')
+    if (fileInput) fileInput.value = ''
+  }
+
   const handleLogout = () => navigate('/')
   const totalFund = transactions.reduce((s, t) => s + Number(t.amount), 0)
+
+  const emailBaseRecipients = useMemo(() => {
+    const normalizedAlumni = alumni.map((person) => ({
+      ...person,
+      role: 'alumni',
+      session: person.session || 'Unknown Session',
+    }))
+    const normalizedStudents = students.map((person) => ({
+      ...person,
+      role: 'student',
+      session: person.session || 'Unknown Session',
+    }))
+    const normalizedExistAlumni = existAlumni.map((person) => ({
+      ...person,
+      role: 'existing-alumni',
+      session: person.session || 'Existing Alumni List',
+    }))
+
+    if (emailAudience === 'alumni') return normalizedAlumni
+    if (emailAudience === 'students') return normalizedStudents
+    if (emailAudience === 'existinglist') return normalizedExistAlumni
+    return [...normalizedAlumni, ...normalizedStudents]
+  }, [alumni, students, existAlumni, emailAudience])
+
+  const availableSessions = useMemo(() => {
+    const uniq = Array.from(new Set(emailBaseRecipients.map((person) => String(person.session || '').trim()).filter(Boolean)))
+    return uniq.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))
+  }, [emailBaseRecipients])
+
+  const emailRecipients = useMemo(() => {
+    const q = emailSearch.trim().toLowerCase()
+    return emailBaseRecipients.filter((person) => {
+      const sessionOk = selectedSessions.length === 0 || selectedSessions.includes(person.session)
+      if (!sessionOk) return false
+      if (!q) return true
+
+      return (
+        String(person.name || '').toLowerCase().includes(q) ||
+        String(person.email || '').toLowerCase().includes(q) ||
+        String(person.session || '').toLowerCase().includes(q) ||
+        String(person.student_id || '').toLowerCase().includes(q)
+      )
+    })
+  }, [emailBaseRecipients, selectedSessions, emailSearch])
+
+  const toggleEmailSession = (session) => {
+    setSelectedSessions((prev) => (
+      prev.includes(session) ? prev.filter((s) => s !== session) : [...prev, session]
+    ))
+  }
+
+  const selectedAudienceCount = emailBaseRecipients.length
+  const canSendEmail = emailRecipients.length > 0 && emailSubject.trim() && emailBody.trim() && !emailSending
+
+  const smsBaseRecipients = useMemo(() => {
+    const normalizedAlumni = alumni.map((person) => ({
+      ...person,
+      role: 'alumni',
+      session: person.session || 'Unknown Session',
+    }))
+    const normalizedStudents = students.map((person) => ({
+      ...person,
+      role: 'student',
+      session: person.session || 'Unknown Session',
+    }))
+    const normalizedExistAlumni = existAlumni.map((person) => ({
+      ...person,
+      role: 'existing-alumni',
+      session: person.session || 'Existing Alumni List',
+    }))
+
+    if (smsAudience === 'alumni') return normalizedAlumni
+    if (smsAudience === 'students') return normalizedStudents
+    if (smsAudience === 'existinglist') return normalizedExistAlumni
+    return [...normalizedAlumni, ...normalizedStudents]
+  }, [alumni, students, existAlumni, smsAudience])
+
+  const availableSmsSessions = useMemo(() => {
+    const uniq = Array.from(new Set(smsBaseRecipients.map((person) => String(person.session || '').trim()).filter(Boolean)))
+    return uniq.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))
+  }, [smsBaseRecipients])
+
+  const smsRecipients = useMemo(() => {
+    const q = smsSearch.trim().toLowerCase()
+    return smsBaseRecipients.filter((person) => {
+      const sessionOk = selectedSmsSessions.length === 0 || selectedSmsSessions.includes(person.session)
+      if (!sessionOk) return false
+      if (!q) return true
+
+      return (
+        String(person.name || '').toLowerCase().includes(q) ||
+        String(person.phone || '').toLowerCase().includes(q) ||
+        String(person.email || '').toLowerCase().includes(q) ||
+        String(person.session || '').toLowerCase().includes(q) ||
+        String(person.student_id || '').toLowerCase().includes(q)
+      )
+    })
+  }, [smsBaseRecipients, selectedSmsSessions, smsSearch])
+
+  const smsDeliverableRecipients = useMemo(
+    () => smsRecipients.filter((person) => String(person.phone || '').trim()),
+    [smsRecipients],
+  )
+
+  const toggleSmsSession = (session) => {
+    setSelectedSmsSessions((prev) => (
+      prev.includes(session) ? prev.filter((s) => s !== session) : [...prev, session]
+    ))
+  }
+
+  const handleSendEmail = async () => {
+    if (!canSendEmail) return
+    setEmailSending(true)
+    const payload = {
+      recipient_emails: emailRecipients.map((p) => p.email).filter(Boolean),
+      subject: emailSubject,
+      preheader: emailPreheader,
+      message: emailBody,
+      cta_text: emailCallToAction,
+    }
+    const { ok, data } = await sendAdminEmail(payload)
+    setEmailSending(false)
+
+    await fetchEmailLogs()
+
+    if (ok) {
+      alert(`Email sent successfully. Sent: ${data.sent}, Failed: ${data.failed}`)
+      return
+    }
+
+    alert(data?.message || 'Email send failed. Check SMTP settings and try again.')
+  }
 
   const navItems = [
     { view:'dashboard',    icon:'fa-gauge-high',      label:'Dashboard',          section:'Main Menu' },
@@ -282,6 +635,9 @@ export default function AdminDashboard() {
     { view:'students',     icon:'fa-user-graduate',    label:'All Students',       section:null },
     { view:'events',       icon:'fa-calendar-days',   label:'Events',             section:null },
     { view:'jobs',         icon:'fa-briefcase',        label:'Jobs',               badge: pendingJobs.length, section:null },
+    { view:'exist-alumni', icon:'fa-list',             label:'Existing Alumni list', section:null },
+    { view:'email-center', icon:'fa-envelope-open-text', label:'Email Center',    section:'Communication' },
+    { view:'sms-center',   icon:'fa-comments',         label:'SMS Center',         section:null },
     { view:'transactions', icon:'fa-money-bill-wave', label:'Fund Transactions',  section:'Finance & Growth' },
     { view:'trainings',    icon:'fa-chalkboard-user', label:'Trainings',          section:null },
     { view:'charts',       icon:'fa-chart-line',      label:'Analytics & Charts', section:null },
@@ -293,6 +649,9 @@ export default function AdminDashboard() {
     students:     { title:'All Students',       sub:'Manage registered students' },
     events:       { title:'Events Management',  sub:'Create and manage events' },
     jobs:         { title:'Jobs',               sub:'Post and manage job listings' },
+    'exist-alumni': { title:'Existing Alumni list', sub:'Add alumni manually or via Excel uploads' },
+    'email-center': { title:'Email Center',     sub:'Create polished broadcast emails for selected sessions' },
+    'sms-center': { title:'SMS Center',         sub:'Build segmented SMS campaigns with audience and session targeting' },
     transactions: { title:'Fund Transactions',  sub:'Track donations & sponsorships' },
     trainings:    { title:'Trainings',          sub:'Manage alumni training programs' },
     charts:       { title:'Analytics & Charts', sub:'Visualize alumni growth & fund data' },
@@ -508,6 +867,382 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               )}
+            </>
+          )}
+
+          {/* FUND TRANSACTIONS */}
+          {activeView === 'email-center' && (
+            <>
+              <div className="email-center-grid">
+                <section className="email-panel email-panel-targets">
+                  <div className="email-panel-head">
+                    <h3><i className="fa-solid fa-filter"></i> Audience Filters</h3>
+                    <p>Choose audience type, then select one or more sessions.</p>
+                  </div>
+
+                  <div className="email-audience-toggle" role="group" aria-label="Email audience toggle">
+                    <button className={emailAudience === 'all' ? 'active' : ''} onClick={() => setEmailAudience('all')}>
+                      <i className="fa-solid fa-users"></i> All Users
+                    </button>
+                    <button className={emailAudience === 'alumni' ? 'active' : ''} onClick={() => setEmailAudience('alumni')}>
+                      <i className="fa-solid fa-user-tie"></i> Alumni
+                    </button>
+                    <button className={emailAudience === 'students' ? 'active' : ''} onClick={() => setEmailAudience('students')}>
+                      <i className="fa-solid fa-user-graduate"></i> Students
+                    </button>
+                    <button className={emailAudience === 'existinglist' ? 'active' : ''} onClick={() => setEmailAudience('existinglist')}>
+                      <i className="fa-solid fa-list"></i> Existing List
+                    </button>
+                  </div>
+
+                  <div className="email-session-toolbar">
+                    <h4>Session Filter</h4>
+                    <div>
+                      <button type="button" className="btn-session-action" onClick={() => setSelectedSessions(availableSessions)}>All</button>
+                      <button type="button" className="btn-session-action" onClick={() => setSelectedSessions([])}>Clear</button>
+                    </div>
+                  </div>
+
+                  <div className="email-session-chips">
+                    {availableSessions.length === 0 ? (
+                      <p className="email-empty-note">No sessions found for this audience.</p>
+                    ) : availableSessions.map((session) => (
+                      <button
+                        key={session}
+                        type="button"
+                        className={`email-chip ${selectedSessions.includes(session) ? 'active' : ''}`}
+                        onClick={() => toggleEmailSession(session)}
+                      >
+                        {session}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="email-recipient-stats">
+                    <div>
+                      <span>Total in audience</span>
+                      <strong>{selectedAudienceCount}</strong>
+                    </div>
+                    <div>
+                      <span>Will receive email</span>
+                      <strong>{emailRecipients.length}</strong>
+                    </div>
+                    <div>
+                      <span>Sessions selected</span>
+                      <strong>{selectedSessions.length || 'All'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="email-recipient-search">
+                    <i className="fa-solid fa-magnifying-glass"></i>
+                    <input
+                      type="text"
+                      placeholder="Search recipients by name, email, ID or session"
+                      value={emailSearch}
+                      onChange={(e) => setEmailSearch(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="email-list-launcher">
+                    <p className="email-empty-note" style={{marginBottom:10}}>
+                      Review full selected recipients before sending.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-see-list"
+                      disabled={emailRecipients.length === 0}
+                      onClick={() => setShowEmailListModal(true)}
+                    >
+                      <i className="fa-solid fa-list"></i> See List ({emailRecipients.length})
+                    </button>
+                  </div>
+                </section>
+
+                <section className="email-panel email-panel-compose">
+                  <div className="email-panel-head">
+                    <h3><i className="fa-solid fa-pen-nib"></i> Compose Email</h3>
+                    <p>Professional template preview only. SMTP integration can be connected later.</p>
+                  </div>
+
+                  <div className="email-compose-grid">
+                    <div className="email-field">
+                      <label>Subject</label>
+                      <input
+                        type="text"
+                        placeholder="Example: Important notice for 2019 & 2020 sessions"
+                        value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="email-field">
+                      <label>Preheader (optional)</label>
+                      <input
+                        type="text"
+                        placeholder="Short summary shown in inbox preview"
+                        value={emailPreheader}
+                        onChange={(e) => setEmailPreheader(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="email-field full">
+                      <label>Message Body</label>
+                      <textarea
+                        rows={8}
+                        placeholder="Write your announcement here..."
+                        value={emailBody}
+                        onChange={(e) => setEmailBody(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="email-field">
+                      <label>Call To Action Button Text</label>
+                      <input
+                        type="text"
+                        placeholder="Visit AlumniConnect"
+                        value={emailCallToAction}
+                        onChange={(e) => setEmailCallToAction(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="email-preview-card">
+                    <div className="email-preview-header">
+                      <span>EMAIL PREVIEW</span>
+                      <strong>AlumniConnect Admin Broadcast</strong>
+                    </div>
+                    <h4>{emailSubject || 'Your email subject will appear here'}</h4>
+                    {emailPreheader && <p className="preheader">{emailPreheader}</p>}
+                    <p>{emailBody || 'Compose your message to see preview text. You can target multiple sessions from the filter panel.'}</p>
+                    <button type="button" className="preview-cta" disabled>{emailCallToAction || 'Visit AlumniConnect'}</button>
+                    <div className="email-preview-footer">
+                      Recipients: {emailRecipients.length} users
+                    </div>
+                  </div>
+
+                  <div className="email-compose-actions">
+                    <button type="button" className="btn-add-event" disabled={!canSendEmail} onClick={handleSendEmail}>
+                      <i className={`fa-solid ${emailSending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                      {emailSending ? 'Sending Email...' : 'Send Email'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-delete"
+                      onClick={() => {
+                        setEmailSubject('')
+                        setEmailPreheader('')
+                        setEmailBody('')
+                        setEmailCallToAction('Visit AlumniConnect')
+                      }}
+                    >
+                      <i className="fa-solid fa-rotate-left"></i> Reset Draft
+                    </button>
+                  </div>
+
+                  <div className="email-log-panel">
+                    <div className="email-log-head">
+                      <h4><i className="fa-solid fa-clock-rotate-left"></i> Email Logs</h4>
+                      <span>Max 10</span>
+                    </div>
+
+                    {emailLogLoading ? (
+                      <p className="email-empty-note">Loading email logs...</p>
+                    ) : emailLogs.length === 0 ? (
+                      <p className="email-empty-note">No email logs yet.</p>
+                    ) : (
+                      <div className="email-log-list">
+                        {emailLogs.map((log) => (
+                          <div className="email-log-item" key={log.id}>
+                            <div className="email-log-top">
+                              <strong>{log.subject || 'No subject'}</strong>
+                              <span className={`email-log-status ${log.status || 'failed'}`}>{log.status || 'failed'}</span>
+                            </div>
+                            <div className="email-log-meta">
+                              Users: {log.recipient_count || 0} | Sent: {log.sent_count || 0} | Failed: {log.failed_count || 0}
+                            </div>
+                            <div className="email-log-time">{log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}</div>
+                            {log.error_message && (
+                              <div className="email-log-error">{log.error_message}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </>
+          )}
+
+          {activeView === 'sms-center' && (
+            <>
+              <div className="email-center-grid">
+                <section className="email-panel email-panel-targets">
+                  <div className="email-panel-head">
+                    <h3><i className="fa-solid fa-users-viewfinder"></i> SMS Audience Filters</h3>
+                    <p>Use the same recipient targeting flow as Email Center.</p>
+                  </div>
+
+                  <div className="email-audience-toggle" role="group" aria-label="SMS audience toggle">
+                    <button className={smsAudience === 'all' ? 'active' : ''} onClick={() => setSmsAudience('all')}>
+                      <i className="fa-solid fa-users"></i> All Users
+                    </button>
+                    <button className={smsAudience === 'alumni' ? 'active' : ''} onClick={() => setSmsAudience('alumni')}>
+                      <i className="fa-solid fa-user-tie"></i> Alumni
+                    </button>
+                    <button className={smsAudience === 'students' ? 'active' : ''} onClick={() => setSmsAudience('students')}>
+                      <i className="fa-solid fa-user-graduate"></i> Students
+                    </button>
+                    <button className={smsAudience === 'existinglist' ? 'active' : ''} onClick={() => setSmsAudience('existinglist')}>
+                      <i className="fa-solid fa-list"></i> Existing List
+                    </button>
+                  </div>
+
+                  <div className="email-session-toolbar">
+                    <h4>Session Filter</h4>
+                    <div>
+                      <button type="button" className="btn-session-action" onClick={() => setSelectedSmsSessions(availableSmsSessions)}>All</button>
+                      <button type="button" className="btn-session-action" onClick={() => setSelectedSmsSessions([])}>Clear</button>
+                    </div>
+                  </div>
+
+                  <div className="email-session-chips">
+                    {availableSmsSessions.length === 0 ? (
+                      <p className="email-empty-note">No sessions found for this audience.</p>
+                    ) : availableSmsSessions.map((session) => (
+                      <button
+                        key={session}
+                        type="button"
+                        className={`email-chip ${selectedSmsSessions.includes(session) ? 'active' : ''}`}
+                        onClick={() => toggleSmsSession(session)}
+                      >
+                        {session}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="email-recipient-stats">
+                    <div>
+                      <span>Total in audience</span>
+                      <strong>{smsBaseRecipients.length}</strong>
+                    </div>
+                    <div>
+                      <span>With phone number</span>
+                      <strong>{smsDeliverableRecipients.length}</strong>
+                    </div>
+                    <div>
+                      <span>Sessions selected</span>
+                      <strong>{selectedSmsSessions.length || 'All'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="email-recipient-search">
+                    <i className="fa-solid fa-magnifying-glass"></i>
+                    <input
+                      type="text"
+                      placeholder="Search by name, phone, email, ID or session"
+                      value={smsSearch}
+                      onChange={(e) => setSmsSearch(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="email-list-launcher">
+                    <p className="email-empty-note" style={{marginBottom:10}}>
+                      Review targeted users before SMS integration is connected.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-see-list"
+                      disabled={smsRecipients.length === 0}
+                      onClick={() => setShowSmsListModal(true)}
+                    >
+                      <i className="fa-solid fa-list"></i> See List ({smsRecipients.length})
+                    </button>
+                  </div>
+                </section>
+
+                <section className="email-panel email-panel-compose">
+                  <div className="email-panel-head">
+                    <h3><i className="fa-solid fa-comment-sms"></i> Compose SMS</h3>
+                    <p>Layout only. SMS gateway/API will be connected later.</p>
+                  </div>
+
+                  <div className="email-compose-grid">
+                    <div className="email-field">
+                      <label>Campaign / Template Name</label>
+                      <input
+                        type="text"
+                        placeholder="Example: Event Reminder - Reunion"
+                        value={smsTemplateName}
+                        onChange={(e) => setSmsTemplateName(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="email-field">
+                      <label>Sender Name</label>
+                      <input
+                        type="text"
+                        placeholder="AlumniConnect Admin"
+                        value={smsSenderName}
+                        onChange={(e) => setSmsSenderName(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="email-field full">
+                      <label>SMS Message</label>
+                      <textarea
+                        rows={8}
+                        placeholder="Write concise SMS content here..."
+                        value={smsMessage}
+                        onChange={(e) => setSmsMessage(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="email-preview-card">
+                    <div className="email-preview-header">
+                      <span>SMS PREVIEW</span>
+                      <strong>{smsSenderName || 'AlumniConnect Admin'}</strong>
+                    </div>
+                    <h4>{smsTemplateName || 'Campaign Name'}</h4>
+                    <p>{smsMessage || 'Compose your SMS to preview the message body for selected recipients.'}</p>
+                    <div className="email-preview-footer">
+                      Targeted: {smsRecipients.length} | Deliverable (phone available): {smsDeliverableRecipients.length}
+                    </div>
+                  </div>
+
+                  <div className="email-compose-actions">
+                    <button type="button" className="btn-add-event" disabled>
+                      <i className="fa-solid fa-paper-plane"></i>
+                      Send SMS (API Soon)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-delete"
+                      onClick={() => {
+                        setSmsTemplateName('General Notice')
+                        setSmsSenderName('AlumniConnect Admin')
+                        setSmsMessage('')
+                      }}
+                    >
+                      <i className="fa-solid fa-rotate-left"></i> Reset Draft
+                    </button>
+                  </div>
+
+                  <div className="email-log-panel">
+                    <div className="email-log-head">
+                      <h4><i className="fa-solid fa-circle-info"></i> Integration Status</h4>
+                      <span>Layout Only</span>
+                    </div>
+                    <p className="email-empty-note" style={{marginBottom:8}}>
+                      API and gateway connection are intentionally disabled right now.
+                    </p>
+                    <p className="email-empty-note">
+                      This screen is ready for provider hookup (Twilio, Fast2SMS, SSL Wireless, etc.) when needed.
+                    </p>
+                  </div>
+                </section>
+              </div>
             </>
           )}
 
@@ -732,6 +1467,114 @@ export default function AdminDashboard() {
             </>
           )}
 
+          {/* EXISTING ALUMNI LIST */}
+          {activeView === 'exist-alumni' && (
+            <>
+              <div className="events-header">
+                <div className="section-title" style={{marginBottom:0}}>
+                  <i className="fa-solid fa-list" style={{color:'#a4508b'}}></i>
+                  Existing Alumni list <span className="badge-count">{existAlumni.length}</span>
+                </div>
+                <button className="btn-add-event" onClick={() => setShowAddAlumniModal(true)}>
+                  <i className="fa-solid fa-plus"></i> Add Alumni Manually
+                </button>
+              </div>
+
+              {/* Upload Excel Section */}
+              <div style={{marginTop:20, marginBottom:30, background:'white', padding:20, borderRadius:12, boxShadow:'0 2px 8px rgba(0,0,0,0.05)', border:'1px solid #f0eaf8'}}>
+                <h4 style={{margin:'0 0 16px 0', color:'#5f2c82', fontSize:16, fontWeight:700}}>
+                  <i className="fa-solid fa-file-excel" style={{marginRight:8}}></i> Bulk Upload from Excel
+                </h4>
+                <form onSubmit={handleBulkUploadAlumni} style={{display:'flex', gap:12, alignItems:'flex-start', flexWrap:'wrap'}}>
+                  <div style={{flex:1, minWidth:250}}>
+                    <input
+                      type="file"
+                      id="exist-alumni-file-input"
+                      accept=".xlsx,.xls"
+                      onChange={e => setExistAlumniFile(e.target.files?.[0] || null)}
+                      style={{padding:'8px 12px', border:'1.5px solid #e0d0f0', borderRadius:8, fontSize:13, fontFamily:'Inter,sans-serif', width:'100%', boxSizing:'border-box'}}
+                    />
+                    <p style={{fontSize:12, color:'#888', margin:'4px 0 0 0'}}>Excel must have columns: name, student_id, email, session, phone</p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={existAlumniUploading || !existAlumniFile}
+                    style={{padding:'10px 16px', background:existAlumniUploading ? '#ddd' : 'linear-gradient(135deg,#5f2c82,#a4508b)', color:'white', border:'none', borderRadius:8, cursor:existAlumniUploading ? 'not-allowed' : 'pointer', fontWeight:600, fontSize:13}}
+                  >
+                    <i className="fa-solid fa-cloud-arrow-up" style={{marginRight:6}}></i>
+                    {existAlumniUploading ? 'Uploading...' : 'Upload Excel'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Search Bar */}
+              <div style={{marginBottom:20, position:'relative'}}>
+                <i className="fa-solid fa-magnifying-glass" style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#a4508b', fontSize:13, pointerEvents:'none'}}></i>
+                <input
+                  type="text"
+                  placeholder="Search by name, email, student ID or session..."
+                  value={existAlumniSearch}
+                  onChange={e => setExistAlumniSearch(e.target.value)}
+                  style={{width:'100%', padding:'10px 12px 10px 34px', border:'1.5px solid #e0d0f0', borderRadius:10, fontSize:13, fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box'}}
+                />
+              </div>
+
+              {/* Alumni List Table */}
+              {existAlumni.length === 0 ? (
+                <div className="admin-table-wrap">
+                  <div className="empty-state">
+                    <i className="fa-solid fa-users"></i>
+                    <p>No alumni added yet. Add them manually or upload an Excel file.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="admin-table-wrap" style={{marginTop:20}}>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Student ID</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Session</th>
+                        <th>Department</th>
+                        <th>Added</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {existAlumni.filter(a => {
+                        const q = existAlumniSearch.trim().toLowerCase()
+                        if (!q) return true
+                        return (a.name || '').toLowerCase().includes(q)
+                            || (a.email || '').toLowerCase().includes(q)
+                            || (a.student_id || '').toLowerCase().includes(q)
+                            || (a.session || '').toLowerCase().includes(q)
+                      }).map((a, i) => (
+                        <tr key={a.id}>
+                          <td>{i+1}</td>
+                          <td><div className="alumni-name-cell"><div className="table-avatar">{a.name?.[0]}</div>{a.name}</div></td>
+                          <td>{a.student_id || '—'}</td>
+                          <td style={{fontSize:12}}>{a.email || '—'}</td>
+                          <td>{a.phone || '—'}</td>
+                          <td>{a.session || '—'}</td>
+                          <td>{a.department || 'ICE'}</td>
+                          <td style={{fontSize:12, color:'#888'}}>{a.created_at?.slice(0,10)}</td>
+                          <td>
+                            <button className="btn-delete" onClick={() => handleDeleteExistAlumni(a.id)}>
+                              <i className="fa-solid fa-trash"></i> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
           {/* EVENTS */}
           {activeView === 'events' && (
             <>
@@ -781,6 +1624,33 @@ export default function AdminDashboard() {
 
         </div>
       </div>
+
+      {/* ADD ALUMNI MODAL */}
+      <Modal show={showAddAlumniModal} onHide={() => setShowAddAlumniModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
+        <div className="modal-box">
+            <h3><i className="fa-solid fa-user-plus" style={{color:'#a4508b'}}></i> Add Alumni Manually</h3>
+            <form onSubmit={handleAddAlumni}>
+              <label>Name *</label>
+              <input type="text" placeholder="e.g., John Doe" value={newAlumniForm.name} onChange={e=>setNewAlumniForm({...newAlumniForm,name:e.target.value})} required/>
+              <label>Student ID / Employee ID *</label>
+              <input type="text" placeholder="e.g., 2020-01-001" value={newAlumniForm.student_id} onChange={e=>setNewAlumniForm({...newAlumniForm,student_id:e.target.value})} required/>
+              <label>Email *</label>
+              <input type="email" placeholder="e.g., john@example.com" value={newAlumniForm.email} onChange={e=>setNewAlumniForm({...newAlumniForm,email:e.target.value})} required/>
+              <label>Session / Batch *</label>
+              <input type="text" placeholder="e.g., 2019" value={newAlumniForm.session} onChange={e=>setNewAlumniForm({...newAlumniForm,session:e.target.value})} required/>
+              <label>Phone Number *</label>
+              <input type="tel" placeholder="e.g., +880 1712345678" value={newAlumniForm.phone} onChange={e=>setNewAlumniForm({...newAlumniForm,phone:e.target.value})} required/>
+              <label>Department (optional)</label>
+              <select style={{padding:'11px 14px',border:'1.5px solid #e0d0f0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'Inter,sans-serif'}} value={newAlumniForm.department} onChange={e=>setNewAlumniForm({...newAlumniForm,department:e.target.value})}>
+                <option>ICE</option><option>EEE</option><option>ME</option><option>CE</option><option>Other</option>
+              </select>
+              <div className="modal-actions">
+                <button type="submit" className="btn-primary-admin"><i className="fa-solid fa-plus"></i> Add Alumni</button>
+                <button type="button" className="btn-cancel" onClick={() => setShowAddAlumniModal(false)}>Cancel</button>
+              </div>
+            </form>
+        </div>
+      </Modal>
 
       {/* ADD JOB MODAL */}
       <Modal show={showJobModal} onHide={() => setShowJobModal(false)} centered contentClassName="bg-transparent border-0 shadow-none p-0">
@@ -1074,6 +1944,148 @@ export default function AdminDashboard() {
                 <button type="button" className="btn-cancel" onClick={()=>setShowTrainModal(false)}>Cancel</button>
               </div>
             </form>
+        </div>
+      </Modal>
+
+      {/* SELECTED RECIPIENTS LIST MODAL */}
+      <Modal show={showEmailListModal} onHide={() => setShowEmailListModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
+        <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
+          <h3 style={{marginBottom:4}}>
+            <i className="fa-solid fa-list-check" style={{color:'#a4508b',marginRight:8}}></i>
+            Selected Recipient List
+          </h3>
+          <p style={{fontSize:13,color:'#888',marginBottom:14}}>
+            Total selected recipients: <strong>{emailRecipients.length}</strong>
+          </p>
+
+          {emailRecipients.length === 0 ? (
+            <div style={{textAlign:'center',padding:'36px 0',color:'#bbb'}}>
+              <i className="fa-solid fa-user-slash" style={{fontSize:32,display:'block',marginBottom:10,color:'#ddd'}}></i>
+              No recipients selected with current filters.
+            </div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Name</th><th>Email</th><th>Session</th><th>Role</th><th>Student ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {emailRecipients.map((person, idx) => (
+                    <tr key={`${person.role}-${person.id}-modal`}>
+                      <td>{idx + 1}</td>
+                      <td>{person.name || 'N/A'}</td>
+                      <td>{person.email || 'N/A'}</td>
+                      <td>{person.session || 'N/A'}</td>
+                      <td style={{textTransform:'capitalize'}}>{person.role || 'N/A'}</td>
+                      <td>{person.student_id || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="modal-actions" style={{marginTop:18}}>
+            <button type="button" className="btn-cancel" onClick={() => setShowEmailListModal(false)}>Close</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* SELECTED SMS RECIPIENTS LIST MODAL */}
+      <Modal show={showSmsListModal} onHide={() => setShowSmsListModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
+        <div className="modal-box" style={{maxHeight:'75vh',overflowY:'auto'}}>
+          <h3 style={{marginBottom:4}}>
+            <i className="fa-solid fa-comment-dots" style={{color:'#a4508b',marginRight:8}}></i>
+            SMS Recipient List
+          </h3>
+          <p style={{fontSize:13,color:'#888',marginBottom:14}}>
+            Total targeted users: <strong>{smsRecipients.length}</strong> | With phone number: <strong>{smsDeliverableRecipients.length}</strong>
+          </p>
+
+          {smsRecipients.length === 0 ? (
+            <div style={{textAlign:'center',padding:'36px 0',color:'#bbb'}}>
+              <i className="fa-solid fa-user-slash" style={{fontSize:32,display:'block',marginBottom:10,color:'#ddd'}}></i>
+              No recipients selected with current filters.
+            </div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>Session</th><th>Role</th><th>Student ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {smsRecipients.map((person, idx) => (
+                    <tr key={`${person.role}-${person.id}-sms-modal`}>
+                      <td>{idx + 1}</td>
+                      <td>{person.name || 'N/A'}</td>
+                      <td>{person.phone || 'N/A'}</td>
+                      <td>{person.email || 'N/A'}</td>
+                      <td>{person.session || 'N/A'}</td>
+                      <td style={{textTransform:'capitalize'}}>{person.role || 'N/A'}</td>
+                      <td>{person.student_id || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="modal-actions" style={{marginTop:18}}>
+            <button type="button" className="btn-cancel" onClick={() => setShowSmsListModal(false)}>Close</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* EXCEL DATA MODAL */}
+      <Modal show={showExcelDataModal} onHide={() => setShowExcelDataModal(false)} centered size="lg" scrollable contentClassName="bg-transparent border-0 shadow-none p-0">
+        <div className="modal-box" style={{maxHeight:'80vh',overflowY:'auto'}}>
+          <h3>
+            <i className="fa-solid fa-table" style={{color:'#a4508b',marginRight:8}}></i>
+            {excelData.title} ({excelData.rows?.length || 0} records)
+          </h3>
+          
+          {excelDataLoading ? (
+            <div style={{textAlign:'center',padding:'40px 0',color:'#a4508b'}}>
+              <i className="fa-solid fa-spinner fa-spin" style={{fontSize:28}}></i>
+              <p style={{marginTop:12}}>Loading Excel data...</p>
+            </div>
+          ) : excelData.rows?.length === 0 ? (
+            <div style={{textAlign:'center',padding:'40px 0',color:'#bbb'}}>
+              <i className="fa-solid fa-table" style={{fontSize:32,display:'block',marginBottom:10,color:'#ddd'}}></i>
+              No data found in this Excel file.
+            </div>
+          ) : (
+            <div style={{overflowX:'auto',marginTop:16}}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    {excelData.headers?.map((header, idx) => (
+                      <th key={idx}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {excelData.rows?.map((row, idx) => (
+                    <tr key={idx}>
+                      {excelData.headers?.map((header, colIdx) => (
+                        <td key={colIdx} style={{fontSize:13, wordBreak:'break-word'}}>
+                          {row[header] ? String(row[header]).substring(0, 50) : '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          <div className="modal-actions" style={{marginTop:18}}>
+            <button type="button" className="btn-cancel" onClick={() => setShowExcelDataModal(false)}>Close</button>
+          </div>
         </div>
       </Modal>
     </div>

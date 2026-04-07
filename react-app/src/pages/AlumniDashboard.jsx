@@ -38,30 +38,60 @@ const titles = {
   membership:   { title: 'Membership',         sub: 'Your membership details'                    },
 }
 
+const normalizePastJobs = (jobs = []) => {
+  if (!Array.isArray(jobs)) return []
+  return jobs
+    .map((j) => ({
+      company: (j?.company || '').trim(),
+      designation: (j?.designation || '').trim(),
+      start_date: j?.start_date || '',
+      end_date: j?.end_date || '',
+    }))
+    .filter((j) => j.company || j.designation)
+}
+
+const samePastJob = (a, b) => (
+  (a.company || '') === (b.company || '') &&
+  (a.designation || '') === (b.designation || '') &&
+  (a.start_date || '') === (b.start_date || '') &&
+  (a.end_date || '') === (b.end_date || '')
+)
+
 export default function AlumniDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
 
   // Persist user info across refreshes using localStorage
   const alumniInfo = (() => {
+    let base = null
     if (location.state?.alumni) {
       localStorage.setItem('alumniUser', JSON.stringify(location.state.alumni))
-      return location.state.alumni
+      base = location.state.alumni
     }
-    try {
-      const stored = localStorage.getItem('alumniUser')
-      if (stored) return JSON.parse(stored)
-    } catch (_) {}
+    if (!base) {
+      try {
+        const stored = localStorage.getItem('alumniUser')
+        if (stored) base = JSON.parse(stored)
+      } catch (_) {}
+    }
+    if (!base) {
+      base = {
+        name: 'Alumni User',
+        email: 'alumni@example.com',
+        phone: '+8801700000000',
+        department: 'ICE',
+        student_id: '1804001',
+        session: '2018-2022',
+        company: 'TechCorp',
+        designation: 'Software Engineer',
+        status: 'approved',
+      }
+    }
+
     return {
-      name: 'Alumni User',
-      email: 'alumni@example.com',
-      phone: '+8801700000000',
-      department: 'ICE',
-      student_id: '1804001',
-      session: '2018-2022',
-      company: 'TechCorp',
-      designation: 'Software Engineer',
-      status: 'approved',
+      ...base,
+      current_job_start_date: base.current_job_start_date || '',
+      past_jobs: normalizePastJobs(base.past_jobs),
     }
   })()
 
@@ -181,20 +211,48 @@ export default function AlumniDashboard() {
   }
 
   const handleSaveProfile = async () => {
-    setProfile(editData)
+    const previousCompany = String(profile.company || '').trim()
+    const previousDesignation = String(profile.designation || '').trim()
+    const changedCurrentJob =
+      previousCompany !== String(editData.company || '').trim() ||
+      previousDesignation !== String(editData.designation || '').trim()
+
+    let nextPastJobs = normalizePastJobs(editData.past_jobs)
+    if (changedCurrentJob && (previousCompany || previousDesignation)) {
+      const movedJob = {
+        company: previousCompany,
+        designation: previousDesignation,
+        start_date: profile.current_job_start_date || '',
+        end_date: editData.current_job_start_date || new Date().toISOString().slice(0, 10),
+      }
+      if (!nextPastJobs.some((j) => samePastJob(j, movedJob))) {
+        nextPastJobs = [movedJob, ...nextPastJobs]
+      }
+    }
+
+    const nextProfile = {
+      ...editData,
+      current_job_start_date: editData.current_job_start_date || '',
+      past_jobs: nextPastJobs,
+    }
+
+    setProfile(nextProfile)
+    setEditData(nextProfile)
     setEditMode(false)
     if (alumniInfo.id) {
       await updateAlumni(alumniInfo.id, {
-        phone:                editData.phone,
-        company:              editData.company,
-        designation:          editData.designation,
-        bio:                  editData.bio,
-        research_interests:   editData.research_interests,
-        extracurricular:      editData.extracurricular,
-        linkedin:             editData.linkedin,
-        github:               editData.github,
-        twitter:              editData.twitter,
-        website:              editData.website,
+        phone:                nextProfile.phone,
+        company:              nextProfile.company,
+        designation:          nextProfile.designation,
+        current_job_start_date: nextProfile.current_job_start_date || null,
+        bio:                  nextProfile.bio,
+        research_interests:   nextProfile.research_interests,
+        extracurricular:      nextProfile.extracurricular,
+        linkedin:             nextProfile.linkedin,
+        github:               nextProfile.github,
+        twitter:              nextProfile.twitter,
+        website:              nextProfile.website,
+        past_jobs:            nextProfile.past_jobs,
       }).catch(() => {})
     }
   }
@@ -873,6 +931,22 @@ export default function AlumniDashboard() {
                       <div className="ad-profile-row"><span>Session</span><strong>{profile.session}</strong></div>
                       <div className="ad-profile-row"><span>Organization</span><strong>{profile.company}</strong></div>
                       <div className="ad-profile-row"><span>Designation</span><strong>{profile.designation}</strong></div>
+                      {profile.current_job_start_date && (
+                        <div className="ad-profile-row"><span>Current Job Start</span><strong>{profile.current_job_start_date}</strong></div>
+                      )}
+                      {Array.isArray(profile.past_jobs) && profile.past_jobs.length > 0 && (
+                        <div className="ad-profile-row ad-profile-row-block">
+                          <span>Past Experience</span>
+                          <strong className="ad-past-jobs-list">
+                            {profile.past_jobs.map((job, idx) => (
+                              <div key={`${job.company}-${job.designation}-${idx}`} className="ad-past-job-item">
+                                <div className="ad-past-job-title">{job.designation || 'Role'} {job.company ? `@ ${job.company}` : ''}</div>
+                                <div className="ad-past-job-dates">{job.start_date || 'N/A'} - {job.end_date || 'Present'}</div>
+                              </div>
+                            ))}
+                          </strong>
+                        </div>
+                      )}
                       {profile.bio && <div className="ad-profile-row"><span>About Me</span><strong style={{whiteSpace:'pre-wrap'}}>{profile.bio}</strong></div>}
                       {profile.research_interests && <div className="ad-profile-row"><span>Research Interests</span><strong>{profile.research_interests}</strong></div>}
                       {profile.extracurricular && <div className="ad-profile-row"><span>Extracurricular</span><strong>{profile.extracurricular}</strong></div>}
@@ -914,6 +988,85 @@ export default function AlumniDashboard() {
                       <label>Designation</label>
                       <input value={editData.designation||''} onChange={e => setEditData({...editData, designation: e.target.value})} />
                     </div>
+                    <div className="ad-form-row">
+                      <label>Current Job Start Date</label>
+                      <input type="date" value={editData.current_job_start_date || ''} onChange={e => setEditData({...editData, current_job_start_date: e.target.value})} />
+                    </div>
+                    <div style={{margin:'10px 0 4px',fontWeight:700,fontSize:13,color:'#5f2c82',letterSpacing:'0.3px'}}>Past Job / Experience</div>
+                    {(editData.past_jobs || []).map((job, idx) => (
+                      <div className="ad-exp-item" key={`past-job-${idx}`}>
+                        <div className="ad-form-row">
+                          <label>Company</label>
+                          <input
+                            value={job.company || ''}
+                            onChange={e => setEditData(prev => {
+                              const next = [...(prev.past_jobs || [])]
+                              next[idx] = { ...next[idx], company: e.target.value }
+                              return { ...prev, past_jobs: next }
+                            })}
+                            placeholder="e.g. Grameenphone"
+                          />
+                        </div>
+                        <div className="ad-form-row">
+                          <label>Designation</label>
+                          <input
+                            value={job.designation || ''}
+                            onChange={e => setEditData(prev => {
+                              const next = [...(prev.past_jobs || [])]
+                              next[idx] = { ...next[idx], designation: e.target.value }
+                              return { ...prev, past_jobs: next }
+                            })}
+                            placeholder="e.g. Network Engineer"
+                          />
+                        </div>
+                        <div className="ad-exp-dates">
+                          <div className="ad-form-row">
+                            <label>Start Date</label>
+                            <input
+                              type="date"
+                              value={job.start_date || ''}
+                              onChange={e => setEditData(prev => {
+                                const next = [...(prev.past_jobs || [])]
+                                next[idx] = { ...next[idx], start_date: e.target.value }
+                                return { ...prev, past_jobs: next }
+                              })}
+                            />
+                          </div>
+                          <div className="ad-form-row">
+                            <label>End Date</label>
+                            <input
+                              type="date"
+                              value={job.end_date || ''}
+                              onChange={e => setEditData(prev => {
+                                const next = [...(prev.past_jobs || [])]
+                                next[idx] = { ...next[idx], end_date: e.target.value }
+                                return { ...prev, past_jobs: next }
+                              })}
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="ad-btn-remove-exp"
+                          onClick={() => setEditData(prev => ({
+                            ...prev,
+                            past_jobs: (prev.past_jobs || []).filter((_, i) => i !== idx),
+                          }))}
+                        >
+                          <i className="fa-solid fa-trash"></i> Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ad-btn-add-exp"
+                      onClick={() => setEditData(prev => ({
+                        ...prev,
+                        past_jobs: [...(prev.past_jobs || []), { company: '', designation: '', start_date: '', end_date: '' }],
+                      }))}
+                    >
+                      <i className="fa-solid fa-plus"></i> Add Past Experience
+                    </button>
                     <div className="ad-form-row">
                       <label>About Me</label>
                       <textarea rows={3} value={editData.bio||''} onChange={e => setEditData({...editData, bio: e.target.value})} placeholder="A short description about yourself…" style={{resize:'vertical',fontFamily:'Inter,sans-serif',fontSize:14,padding:'10px 14px',border:'1.5px solid #e0d5f5',borderRadius:10,outline:'none',width:'100%',color:'#333'}} />
@@ -1375,6 +1528,7 @@ export default function AlumniDashboard() {
                 { icon:'fa-phone',          label:'Phone',                value: selectedAlumni.phone },
                 { icon:'fa-building',       label:'Organization',         value: selectedAlumni.company },
                 { icon:'fa-briefcase',      label:'Designation',          value: selectedAlumni.designation },
+                { icon:'fa-calendar-days',  label:'Current Job Start',    value: selectedAlumni.current_job_start_date },
               ].filter(r => r.value).map((row, i) => (
                 <div key={i} style={{display:'flex',alignItems:'flex-start',gap:14,padding:'10px 0',borderBottom:'1px solid #f3eeff'}}>
                   <span style={{width:36,height:36,borderRadius:10,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>
@@ -1386,6 +1540,26 @@ export default function AlumniDashboard() {
                   </div>
                 </div>
               ))}
+
+              {Array.isArray(selectedAlumni.past_jobs) && selectedAlumni.past_jobs.length > 0 && (
+                <div style={{marginTop:20}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i> Past Experience
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {selectedAlumni.past_jobs.map((job, idx) => (
+                      <div key={`${job.id || 'past'}-${idx}`} style={{border:'1px solid #eadcf9',borderRadius:12,padding:'10px 12px',background:'#fbf7ff'}}>
+                        <div style={{fontSize:14,fontWeight:700,color:'#2d0a50'}}>
+                          {job.designation || 'Role'}{job.company ? ` @ ${job.company}` : ''}
+                        </div>
+                        <div style={{fontSize:12,color:'#8668a6',marginTop:2}}>
+                          {(job.start_date || 'N/A')} - {(job.end_date || 'Present')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Research Interests */}
               {selectedAlumni.research_interests && (

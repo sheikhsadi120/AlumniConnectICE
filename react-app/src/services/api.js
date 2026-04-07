@@ -9,17 +9,22 @@ export const getUploadUrl = (pathOrUrl) => {
 };
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
-  let data = {};
   try {
-    data = await res.json();
-  } catch (_) {
-    data = { success: false, message: `Server error (HTTP ${res.status})` };
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = { success: false, message: `Server error (HTTP ${res.status})` };
+    }
+    return { ok: res.ok, status: res.status, data };
+  } catch (error) {
+    console.error('Request failed:', error);
+    throw new Error(`Failed to fetch: ${error.message}`);
   }
-  return { ok: res.ok, status: res.status, data };
 }
 
 // ── Auth ──────────────────────────────────────────────
@@ -98,6 +103,29 @@ export const submitJob         = (d)   => request('/jobs/submit',             { 
 export const getPendingJobs    = ()    => request('/jobs/pending-submissions');
 export const approveJob        = (id)  => request(`/jobs/${id}/approve`,      { method:'POST' });
 export const deleteJob         = (id)  => request(`/jobs/${id}`,              { method:'DELETE' });
+
+// ── Existing Lists (Admin Excel Repository) ──────────
+export const getExistingLists = () => request('/existing-lists');
+export const uploadExistingList = (formData) => {
+  return fetch(`${BASE_URL}/existing-lists`, { method: 'POST', body: formData })
+    .then(async res => {
+      let data = {};
+      try { data = await res.json(); } catch (_) { data = { success: false, message: `Server error (HTTP ${res.status})` }; }
+      return { ok: res.ok, status: res.status, data };
+    });
+};
+export const deleteExistingList = (id) => request(`/existing-lists/${id}`, { method: 'DELETE' });
+export const getExistingListData = (id) => request(`/existing-lists/${id}/data`);
+
+// ── Existing Alumni (Admin-Added Alumni List) ────────
+export const getExistAlumni = () => request('/exist-alumni');
+export const addExistAlumni = (alumniData) => request('/exist-alumni', { method: 'POST', body: JSON.stringify(alumniData) });
+export const bulkAddExistAlumni = (alumniRecords) => request('/exist-alumni/bulk', { method: 'POST', body: JSON.stringify({ alumni_records: alumniRecords }) });
+export const deleteExistAlumni = (id) => request(`/exist-alumni/${id}`, { method: 'DELETE' });
+
+// ── Email Center ─────────────────────────────────────
+export const sendAdminEmail = (payload) => request('/email/send', { method:'POST', body: JSON.stringify(payload) });
+export const getEmailLogs = () => request('/email/logs');
 
 // ── Stats ─────────────────────────────────────────────
 export const getStats = () => request('/stats');

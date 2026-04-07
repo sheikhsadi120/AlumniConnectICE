@@ -206,8 +206,36 @@
   font-size: 13.5px;
 }
 .ad-profile-row:last-child { border-bottom: none; }
+.ad-profile-row-block { align-items: flex-start; }
 .ad-profile-row span { color: #888; min-width: 130px; }
 .ad-profile-row strong { color: #2d0a50; font-weight: 600; }
+
+.ad-past-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ad-past-job-item {
+  border: 1px solid #e9d9fb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #faf5ff;
+}
+
+.ad-past-job-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2d0a50;
+}
+
+.ad-past-job-dates {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #8a73a6;
+  font-weight: 600;
+}
 
 .ad-btn-edit {
   background: linear-gradient(135deg, #5f2c82, #a4508b);
@@ -246,10 +274,59 @@
   font-family: 'Inter', sans-serif;
 }
 
+.ad-exp-item {
+  border: 1px solid #eadcf9;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fbf7ff;
+  margin-bottom: 12px;
+}
+
+.ad-exp-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ad-btn-add-exp,
+.ad-btn-remove-exp {
+  border: none;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ad-btn-add-exp {
+  background: #f0e6ff;
+  color: #5f2c82;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.ad-btn-remove-exp {
+  background: #ffe8e8;
+  color: #8b1a1a;
+  padding: 7px 11px;
+}
+
+.ad-btn-add-exp:hover { background: #e1cefa; }
+.ad-btn-remove-exp:hover { background: #ffd1d1; }
+
 /* ========== EVENTS ========== */
 .ad-events-grid {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;
   margin-bottom: 28px;
+}
+
+@media (max-width: 640px) {
+  .ad-exp-dates {
+    grid-template-columns: 1fr;
+  }
 }
 .ad-events-grid.full { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .ad-event-card {

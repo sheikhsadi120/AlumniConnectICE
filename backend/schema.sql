@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS alumni (
     graduation_year VARCHAR(10)  DEFAULT NULL,
     company     VARCHAR(100),
     designation VARCHAR(100),
+    current_job_start_date DATE DEFAULT NULL,
     password    VARCHAR(255) NOT NULL,
     photo       VARCHAR(255)  DEFAULT NULL,
     id_photo    VARCHAR(255)  DEFAULT NULL,
@@ -32,7 +33,20 @@ CREATE TABLE IF NOT EXISTS alumni (
     upgrade_request VARCHAR(20)  DEFAULT NULL,
     upgrade_document VARCHAR(255) DEFAULT NULL,
     status      ENUM('pending','approved','rejected') DEFAULT 'pending',
+    is_manually_added TINYINT DEFAULT 0,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Alumni past job/experience history
+CREATE TABLE IF NOT EXISTS past_job_experiences (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    alumni_id   INT NOT NULL,
+    company     VARCHAR(150) DEFAULT NULL,
+    designation VARCHAR(150) DEFAULT NULL,
+    start_date  DATE DEFAULT NULL,
+    end_date    DATE DEFAULT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE
 );
 
 -- Events table
@@ -139,6 +153,28 @@ CREATE TABLE IF NOT EXISTS jobs (
     apply_link      VARCHAR(500) DEFAULT NULL,
     status          ENUM('pending','approved') DEFAULT 'approved',
     submitted_by    INT DEFAULT NULL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Email logs for admin email center (keep latest 10 rows in app logic)
+CREATE TABLE IF NOT EXISTS email_logs (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    subject         VARCHAR(255) NOT NULL,
+    recipient_count INT NOT NULL DEFAULT 0,
+    sent_count      INT NOT NULL DEFAULT 0,
+    failed_count    INT NOT NULL DEFAULT 0,
+    status          VARCHAR(20) NOT NULL,
+    error_message   TEXT DEFAULT NULL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Admin managed Excel list repository
+CREATE TABLE IF NOT EXISTS existing_lists (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    title           VARCHAR(255) NOT NULL,
+    file_name       VARCHAR(255) NOT NULL,
+    stored_path     VARCHAR(500) NOT NULL,
+    uploaded_by     VARCHAR(100) DEFAULT 'admin',
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

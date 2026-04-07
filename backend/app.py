@@ -9,15 +9,22 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import pymysql
 import pymysql.cursors
+from pymysql import err as pymysql_err
 import config
 import os
 import uuid
+from datetime import date
+from openpyxl import load_workbook
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 ALLOWED_DOCUMENT_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+ALLOWED_EXISTING_LIST_EXTENSIONS = {'xlsx', 'xls'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
@@ -27,16 +34,327 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 CORS(app, resources={r"/api/*": {"origins": config.CORS_ORIGINS}}, supports_credentials=True)
 
 
+def init_db_tables_from_schema():
+    """Ensure DB and tables exist by executing schema.sql (safe with IF NOT EXISTS/INSERT IGNORE)."""
+    schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+    if not os.path.exists(schema_path):
+        return
+
+    with open(schema_path, 'r', encoding='utf-8') as f:
+        schema_sql = f.read()
+
+    # Drop comment lines first so statements after comments are not skipped.
+    filtered_lines = []
+    for line in schema_sql.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('--'):
+            continue
+        filtered_lines.append(line)
+
+    # schema.sql contains local CREATE DATABASE/USE lines; those are handled explicitly here.
+    statements = []
+    filtered_sql = '\n'.join(filtered_lines)
+    for chunk in filtered_sql.split(';'):
+        stmt = chunk.strip()
+        if not stmt:
+            continue
+        upper = stmt.upper()
+        if upper.startswith('CREATE DATABASE') or upper.startswith('USE '):
+            continue
+        statements.append(stmt)
+
+    bootstrap_conn = pymysql.connect(
+        host=config.MYSQL_HOST,
+        user=config.MYSQL_USER,
+        password=config.MYSQL_PASSWORD,
+        port=config.MYSQL_PORT,
+        charset='utf8mb4',
+        autocommit=True,
+    )
+
+    try:
+        cur = bootstrap_conn.cursor()
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        cur.execute(f"USE `{config.MYSQL_DB}`")
+        for stmt in statements:
+            cur.execute(stmt)
+        cur.close()
+    finally:
+        bootstrap_conn.close()
+
+
+def ensure_db_migrations():
+    """Apply small safe migrations for already-existing databases."""
+    conn = pymysql.connect(
+        host=config.MYSQL_HOST,
+        user=config.MYSQL_USER,
+        password=config.MYSQL_PASSWORD,
+        database=config.MYSQL_DB,
+        port=config.MYSQL_PORT,
+        charset='utf8mb4',
+        autocommit=True,
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT 1
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME='alumni' AND COLUMN_NAME='current_job_start_date'
+            LIMIT 1
+            """,
+            (config.MYSQL_DB,),
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE alumni ADD COLUMN current_job_start_date DATE DEFAULT NULL")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS past_job_experiences (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                alumni_id   INT NOT NULL,
+                company     VARCHAR(150) DEFAULT NULL,
+                designation VARCHAR(150) DEFAULT NULL,
+                start_date  DATE DEFAULT NULL,
+                end_date    DATE DEFAULT NULL,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_logs (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                subject         VARCHAR(255) NOT NULL,
+                recipient_count INT NOT NULL DEFAULT 0,
+                sent_count      INT NOT NULL DEFAULT 0,
+                failed_count    INT NOT NULL DEFAULT 0,
+                status          VARCHAR(20) NOT NULL,
+                error_message   TEXT DEFAULT NULL,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS existing_lists (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                title           VARCHAR(255) NOT NULL,
+                file_name       VARCHAR(255) NOT NULL,
+                stored_path     VARCHAR(500) NOT NULL,
+                uploaded_by     VARCHAR(100) DEFAULT 'admin',
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Add is_manually_added column if it doesn't exist
+        cur.execute(
+            """
+            SELECT 1
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME='alumni' AND COLUMN_NAME='is_manually_added'
+            LIMIT 1
+            """,
+            (config.MYSQL_DB,),
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE alumni ADD COLUMN is_manually_added TINYINT DEFAULT 0")
+
+        cur.close()
+    finally:
+        conn.close()
+
+
+if config.AUTO_INIT_DB:
+    try:
+        init_db_tables_from_schema()
+    except Exception as e:
+        # Keep startup resilient; API endpoints will return DB errors if connectivity is still wrong.
+        print(f"[DB INIT] Skipped due to error: {e}")
+
+try:
+    ensure_db_migrations()
+except Exception as e:
+    print(f"[DB MIGRATION] Skipped due to error: {e}")
+
+
 def build_upload_url(filename):
     if not filename:
         return None
     base_url = config.PUBLIC_BASE_URL or request.host_url.rstrip('/')
     return f"{base_url}/uploads/{filename}"
 
+
+def fetch_past_jobs(conn, alumni_id):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, company, designation, start_date, end_date, created_at
+        FROM past_job_experiences
+        WHERE alumni_id=%s
+        ORDER BY COALESCE(end_date, '9999-12-31') DESC, id DESC
+        """,
+        (alumni_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    for r in rows:
+        if r.get('start_date'):
+            r['start_date'] = str(r['start_date'])
+        if r.get('end_date'):
+            r['end_date'] = str(r['end_date'])
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+    return rows
+
+
+def insert_email_log(conn, subject, recipient_count, sent_count, failed_count, status, error_message=None):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO email_logs (subject, recipient_count, sent_count, failed_count, status, error_message)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            (subject or '')[:255],
+            int(recipient_count or 0),
+            int(sent_count or 0),
+            int(failed_count or 0),
+            (status or 'failed')[:20],
+            (str(error_message)[:1000] if error_message else None),
+        ),
+    )
+
+    # Keep only latest 10 logs.
+    cur.execute(
+        """
+        DELETE FROM email_logs
+        WHERE id NOT IN (
+            SELECT id FROM (
+                SELECT id
+                FROM email_logs
+                ORDER BY created_at DESC, id DESC
+                LIMIT 10
+            ) AS keep_rows
+        )
+        """
+    )
+    conn.commit()
+    cur.close()
+
+
+def fetch_email_logs(conn, limit=10):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, subject, recipient_count, sent_count, failed_count, status, error_message, created_at
+        FROM email_logs
+        ORDER BY created_at DESC, id DESC
+        LIMIT %s
+        """,
+        (int(limit),),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    for row in rows:
+        if row.get('created_at'):
+            row['created_at'] = str(row['created_at'])
+    return rows
+
+
+def smtp_configured():
+        return bool(config.SMTP_HOST and config.SMTP_PORT and config.SMTP_USERNAME and config.SMTP_PASSWORD and config.SMTP_FROM_EMAIL)
+
+
+def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'):
+        escaped_subject = str(subject or '')
+        escaped_preheader = str(preheader or '')
+        escaped_body = str(message or '').replace('\n', '<br>')
+        escaped_cta = str(cta_text or 'Open AlumniConnect')
+        base_url = config.PUBLIC_BASE_URL or 'http://localhost:5173'
+        return f"""
+        <html>
+            <body style=\"margin:0;padding:0;background:#f7f2ff;font-family:Inter,Segoe UI,Arial,sans-serif;color:#2d0a50;\">
+                <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:24px 10px;\">
+                    <tr>
+                        <td align=\"center\">
+                            <table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ecdffb;\">
+                                <tr>
+                                    <td style=\"padding:20px 26px;background:linear-gradient(135deg,#4f1c78,#a4508b);color:white;\">
+                                        <div style=\"font-size:12px;letter-spacing:1px;opacity:0.8;font-weight:700;\">ALUMNICONNECT</div>
+                                        <div style=\"font-size:24px;line-height:1.3;font-weight:700;margin-top:8px;\">{escaped_subject}</div>
+                                        <div style=\"font-size:13px;line-height:1.6;opacity:0.9;margin-top:8px;\">{escaped_preheader}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style=\"padding:26px;color:#4a3764;font-size:15px;line-height:1.7;\">{escaped_body}</td>
+                                </tr>
+                                <tr>
+                                    <td style=\"padding:0 26px 26px;\">
+                                        <a href=\"{base_url}\" style=\"display:inline-block;padding:11px 18px;background:linear-gradient(135deg,#5f2c82,#a4508b);color:#fff;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;\">{escaped_cta}</a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        """
+
+
+def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniConnect'):
+        recipients = [e.strip() for e in (to_emails or []) if str(e).strip()]
+        if not recipients:
+                return {'sent': 0, 'failed': 0, 'errors': []}
+
+        if not smtp_configured():
+                raise RuntimeError('SMTP is not configured. Set SMTP_* in backend/.env.')
+
+        html_content = _build_email_html(subject, preheader, message, cta_text)
+        plain_content = f"{subject}\n\n{preheader}\n\n{message}\n"
+
+        sent_count = 0
+        failed_count = 0
+        errors = []
+
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
+                if config.SMTP_USE_TLS:
+                        server.starttls()
+                server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
+
+                for email in recipients:
+                        msg = MIMEMultipart('alternative')
+                        msg['Subject'] = subject
+                        msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
+                        msg['To'] = email
+                        msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
+                        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+                        try:
+                                server.sendmail(config.SMTP_FROM_EMAIL, [email], msg.as_string())
+                                sent_count += 1
+                        except Exception as ex:
+                                failed_count += 1
+                                errors.append({'email': email, 'error': str(ex)})
+
+        return {'sent': sent_count, 'failed': failed_count, 'errors': errors}
+
 # ─── Global JSON error handlers ───────────────────────
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Return JSON for all unhandled exceptions instead of HTML."""
+    if isinstance(e, pymysql_err.OperationalError):
+        code = e.args[0] if e.args else None
+        if code == 1045:
+            return jsonify({
+                'success': False,
+                'message': 'Database authentication failed. Set MYSQL_USER and MYSQL_PASSWORD in backend/.env, then restart backend.'
+            }), 503
+
     if config.DEBUG:
         import traceback
         return jsonify({'success': False, 'message': str(e), 'trace': traceback.format_exc()[-500:]}), 500
@@ -117,6 +435,8 @@ def alumni_login():
     if (alumni.get('user_type') or 'alumni') == 'student':
         return jsonify({'success': False, 'message': 'This account is a student account. Please use the Student Login page.'}), 403
 
+    past_jobs = fetch_past_jobs(conn, alumni['id'])
+
     return jsonify({
         'success': True,
         'alumni': {
@@ -129,6 +449,8 @@ def alumni_login():
             'session':     alumni['session'],
             'company':     alumni['company'],
             'designation': alumni['designation'],
+            'current_job_start_date': str(alumni['current_job_start_date']) if alumni.get('current_job_start_date') else '',
+            'past_jobs':          past_jobs,
             'status':             alumni['status'],
             'photo_url':          build_upload_url(alumni.get('photo')),
             'bio':                alumni.get('bio', ''),
@@ -186,6 +508,8 @@ def student_login():
             'session':        person['session'],
             'company':        person.get('company', ''),
             'designation':    person.get('designation', ''),
+            'current_job_start_date': str(person['current_job_start_date']) if person.get('current_job_start_date') else '',
+            'past_jobs':       fetch_past_jobs(conn, person['id']),
             'graduation_year':person.get('graduation_year', ''),
             'status':         person['status'],
             'user_type':      person.get('user_type', 'student'),
@@ -281,11 +605,36 @@ def get_pending():
 def get_alumni():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id,name,email,phone,department,student_id,session,graduation_year,company,designation,photo,bio,research_interests,extracurricular,linkedin,github,twitter,website,status,created_at FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') ORDER BY name")
+    cur.execute("SELECT id,name,email,phone,department,student_id,session,graduation_year,company,designation,current_job_start_date,photo,bio,research_interests,extracurricular,linkedin,github,twitter,website,status,created_at FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0) ORDER BY name")
     rows = cur.fetchall()
+
+    cur.execute(
+        """
+        SELECT alumni_id, id, company, designation, start_date, end_date, created_at
+        FROM past_job_experiences
+        ORDER BY COALESCE(end_date, '9999-12-31') DESC, id DESC
+        """
+    )
+    past_rows = cur.fetchall()
     cur.close()
+
+    past_jobs_by_alumni = {}
+    for p in past_rows:
+        p_item = {
+            'id': p.get('id'),
+            'company': p.get('company'),
+            'designation': p.get('designation'),
+            'start_date': str(p['start_date']) if p.get('start_date') else None,
+            'end_date': str(p['end_date']) if p.get('end_date') else None,
+            'created_at': str(p['created_at']) if p.get('created_at') else None,
+        }
+        past_jobs_by_alumni.setdefault(p['alumni_id'], []).append(p_item)
+
     for r in rows:
         r['photo_url'] = build_upload_url(r.get('photo'))
+        if r.get('current_job_start_date'):
+            r['current_job_start_date'] = str(r['current_job_start_date'])
+        r['past_jobs'] = past_jobs_by_alumni.get(r['id'], [])
     return jsonify(rows)
 
 
@@ -303,19 +652,85 @@ def get_students():
 
 @app.route('/api/alumni/<int:aid>', methods=['PUT'])
 def update_alumni(aid):
-    data = request.get_json()
-    fields = ['name','phone','company','designation','session','bio','research_interests','extracurricular','linkedin','github','twitter','website']
-    sets   = ', '.join(f"{f}=%s" for f in fields if f in data)
-    vals   = [data[f] for f in fields if f in data]
-    if not sets:
+    data = request.get_json() or {}
+    fields = ['name','phone','company','designation','current_job_start_date','session','bio','research_interests','extracurricular','linkedin','github','twitter','website']
+    update_fields = [f for f in fields if f in data]
+    has_past_jobs = 'past_jobs' in data
+
+    if not update_fields and not has_past_jobs:
         return jsonify({'success': False, 'message': 'No fields to update'}), 400
-    vals.append(aid)
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(f"UPDATE alumni SET {sets} WHERE id=%s", vals)
-    conn.commit()
-    cur.close()
-    return jsonify({'success': True})
+    try:
+        cur.execute("SELECT company, designation, current_job_start_date FROM alumni WHERE id=%s", (aid,))
+        existing = cur.fetchone()
+        if not existing:
+            return jsonify({'success': False, 'message': 'Alumni not found'}), 404
+
+        prev_company = (existing.get('company') or '').strip()
+        prev_designation = (existing.get('designation') or '').strip()
+        prev_start = existing.get('current_job_start_date')
+
+        next_company = (data['company'] if 'company' in data else existing.get('company') or '').strip()
+        next_designation = (data['designation'] if 'designation' in data else existing.get('designation') or '').strip()
+        next_start = data['current_job_start_date'] if 'current_job_start_date' in data else existing.get('current_job_start_date')
+
+        current_job_changed = (next_company != prev_company) or (next_designation != prev_designation)
+
+        if update_fields:
+            sets = ', '.join(f"{f}=%s" for f in update_fields)
+            vals = [data[f] for f in update_fields]
+            vals.append(aid)
+            cur.execute(f"UPDATE alumni SET {sets} WHERE id=%s", vals)
+
+        if has_past_jobs:
+            provided = data.get('past_jobs') or []
+            if not isinstance(provided, list):
+                return jsonify({'success': False, 'message': 'past_jobs must be a list'}), 400
+
+            cur.execute("DELETE FROM past_job_experiences WHERE alumni_id=%s", (aid,))
+            for item in provided:
+                if not isinstance(item, dict):
+                    continue
+                company = (item.get('company') or '').strip()
+                designation = (item.get('designation') or '').strip()
+                start_date = item.get('start_date') or None
+                end_date = item.get('end_date') or None
+                if not company and not designation:
+                    continue
+                cur.execute(
+                    "INSERT INTO past_job_experiences (alumni_id, company, designation, start_date, end_date) VALUES (%s,%s,%s,%s,%s)",
+                    (aid, company or None, designation or None, start_date, end_date),
+                )
+        elif current_job_changed and (prev_company or prev_designation):
+            auto_end = next_start or date.today().isoformat()
+            cur.execute(
+                """
+                SELECT id
+                FROM past_job_experiences
+                WHERE alumni_id=%s
+                  AND COALESCE(company,'')=%s
+                  AND COALESCE(designation,'')=%s
+                  AND COALESCE(start_date,'1000-01-01') = COALESCE(%s,'1000-01-01')
+                  AND COALESCE(end_date,'1000-01-01') = COALESCE(%s,'1000-01-01')
+                LIMIT 1
+                """,
+                (aid, prev_company, prev_designation, prev_start, auto_end),
+            )
+            if not cur.fetchone():
+                cur.execute(
+                    "INSERT INTO past_job_experiences (alumni_id, company, designation, start_date, end_date) VALUES (%s,%s,%s,%s,%s)",
+                    (aid, prev_company or None, prev_designation or None, prev_start, auto_end),
+                )
+
+        conn.commit()
+        return jsonify({'success': True, 'past_jobs': fetch_past_jobs(conn, aid)})
+    except Exception as ex:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(ex)}), 500
+    finally:
+        cur.close()
 
 
 @app.route('/api/alumni/<int:aid>', methods=['DELETE'])
@@ -332,10 +747,27 @@ def delete_alumni(aid):
 def approve(aid):
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("SELECT name, email, user_type FROM alumni WHERE id=%s", (aid,))
+    person = cur.fetchone()
     cur.execute("UPDATE alumni SET status='approved' WHERE id=%s", (aid,))
     conn.commit()
     cur.close()
-    return jsonify({'success': True})
+
+    warning = None
+    if person and person.get('email'):
+        try:
+            role_label = 'student' if (person.get('user_type') == 'student') else 'alumni'
+            send_email(
+                [person['email']],
+                'Your AlumniConnect registration has been approved',
+                f"Hi {person.get('name') or 'there'},\n\nYour {role_label} registration has been approved by admin. You can now login and use your dashboard.",
+                'Congratulations. Your account is now active.',
+                'Login to AlumniConnect'
+            )
+        except Exception as ex:
+            warning = str(ex)
+
+    return jsonify({'success': True, 'email_warning': warning})
 
 
 @app.route('/api/reject/<int:aid>', methods=['POST'])
@@ -408,10 +840,26 @@ def get_upgrade_requests():
 def approve_upgrade(aid):
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("SELECT name, email FROM alumni WHERE id=%s", (aid,))
+    person = cur.fetchone()
     cur.execute("UPDATE alumni SET user_type='alumni', upgrade_request='approved' WHERE id=%s", (aid,))
     conn.commit()
     cur.close()
-    return jsonify({'success': True})
+
+    warning = None
+    if person and person.get('email'):
+        try:
+            send_email(
+                [person['email']],
+                'Your Alumni upgrade request has been approved',
+                f"Hi {person.get('name') or 'there'},\n\nGreat news. Your account has been upgraded to Alumni status. Please login from the Alumni Login page.",
+                'Your membership tier has been upgraded.',
+                'Open Alumni Dashboard'
+            )
+        except Exception as ex:
+            warning = str(ex)
+
+    return jsonify({'success': True, 'email_warning': warning})
 
 
 @app.route('/api/reject-upgrade/<int:aid>', methods=['POST'])
@@ -456,8 +904,66 @@ def add_event():
     )
     conn.commit()
     new_id = cur.lastrowid
+
+    audience = data.get('audience', 'both')
+    if audience == 'students':
+        cur.execute("SELECT email FROM alumni WHERE status='approved' AND user_type='student' AND email IS NOT NULL AND email <> ''")
+    elif audience == 'alumni':
+        cur.execute("SELECT email FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND email IS NOT NULL AND email <> ''")
+    else:
+        cur.execute("SELECT email FROM alumni WHERE status='approved' AND email IS NOT NULL AND email <> ''")
+    event_recipients = [r['email'] for r in cur.fetchall()]
+
     cur.close()
-    return jsonify({'success': True, 'id': new_id}), 201
+
+    warning = None
+    try:
+        send_email(
+            event_recipients,
+            f"New Event Notice: {data.get('title', 'AlumniConnect Event')}",
+            f"A new event has been published.\n\nTitle: {data.get('title', '')}\nDate: {data.get('date', '')}\nLocation: {data.get('location', '')}\n\n{data.get('description', '')}",
+            'A new event has been announced for your community.',
+            'View Event Details'
+        )
+    except Exception as ex:
+        warning = str(ex)
+
+    return jsonify({'success': True, 'id': new_id, 'email_warning': warning}), 201
+
+
+@app.route('/api/email/send', methods=['POST'])
+def send_bulk_email_endpoint():
+    data = request.get_json() or {}
+    recipients = data.get('recipient_emails') or []
+    subject = (data.get('subject') or '').strip()
+    message = (data.get('message') or '').strip()
+    preheader = (data.get('preheader') or '').strip()
+    cta_text = (data.get('cta_text') or '').strip() or 'Open AlumniConnect'
+
+    if not subject:
+        return jsonify({'success': False, 'message': 'Subject is required'}), 400
+    if not message:
+        return jsonify({'success': False, 'message': 'Message is required'}), 400
+    if not recipients:
+        return jsonify({'success': False, 'message': 'No recipients selected'}), 400
+
+    conn = get_db()
+    try:
+        result = send_email(recipients, subject, message, preheader, cta_text)
+        sent = int(result.get('sent', 0))
+        failed = int(result.get('failed', 0))
+        status = 'success' if failed == 0 else ('partial' if sent > 0 else 'failed')
+        insert_email_log(conn, subject, len(recipients), sent, failed, status, None)
+        return jsonify({'success': True, **result})
+    except Exception as ex:
+        insert_email_log(conn, subject, len(recipients), 0, len(recipients), 'failed', str(ex))
+        return jsonify({'success': False, 'message': str(ex)}), 500
+
+
+@app.route('/api/email/logs', methods=['GET'])
+def get_email_logs():
+    conn = get_db()
+    return jsonify(fetch_email_logs(conn, limit=10))
 
 
 @app.route('/api/events/<int:eid>', methods=['PUT'])
@@ -888,6 +1394,310 @@ def delete_job(jid):
 
 
 # ═══════════════════════════════════════════════════════
+#  EXISTING LISTS (ADMIN EXCEL UPLOADS)
+# ═══════════════════════════════════════════════════════
+
+@app.route('/api/existing-lists', methods=['GET'])
+def get_existing_lists():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, title, file_name, stored_path, uploaded_by, created_at FROM existing_lists ORDER BY created_at DESC, id DESC")
+    rows = cur.fetchall()
+    cur.close()
+
+    for r in rows:
+        r['file_url'] = build_upload_url(r.get('stored_path'))
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+
+    return jsonify(rows)
+
+
+@app.route('/api/existing-lists', methods=['POST'])
+def upload_existing_list():
+    content_type = (request.content_type or '').lower()
+    is_multipart = ('multipart/form-data' in content_type) or bool(request.files)
+    if not is_multipart:
+        return jsonify({'success': False, 'message': 'Upload must be multipart/form-data'}), 400
+
+    excel_file = request.files.get('file')
+    if not excel_file or not excel_file.filename:
+        return jsonify({'success': False, 'message': 'Excel file is required'}), 400
+
+    original_name = secure_filename(excel_file.filename)
+    if '.' not in original_name:
+        return jsonify({'success': False, 'message': 'Invalid file name'}), 400
+
+    ext = original_name.rsplit('.', 1)[-1].lower()
+    if ext not in ALLOWED_EXISTING_LIST_EXTENSIONS:
+        return jsonify({'success': False, 'message': 'Only .xlsx or .xls files are allowed'}), 400
+
+    list_title = os.path.splitext(original_name)[0].strip() or 'Untitled List'
+    stored_name = f"{uuid.uuid4().hex}_{original_name}"
+    subdir = os.path.join(UPLOAD_FOLDER, 'existing_lists')
+    os.makedirs(subdir, exist_ok=True)
+    full_path = os.path.join(subdir, stored_name)
+    excel_file.save(full_path)
+
+    stored_path = f"existing_lists/{stored_name}"
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO existing_lists (title, file_name, stored_path, uploaded_by) VALUES (%s,%s,%s,%s)",
+        (list_title, original_name, stored_path, 'admin')
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    cur.close()
+
+    return jsonify({
+        'success': True,
+        'id': new_id,
+        'title': list_title,
+        'file_name': original_name,
+        'file_url': build_upload_url(stored_path),
+    }), 201
+
+
+@app.route('/api/existing-lists/<int:list_id>', methods=['DELETE'])
+def delete_existing_list(list_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT stored_path FROM existing_lists WHERE id=%s", (list_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        return jsonify({'success': False, 'message': 'List not found'}), 404
+
+    cur.execute("DELETE FROM existing_lists WHERE id=%s", (list_id,))
+    conn.commit()
+    cur.close()
+
+    stored_path = row.get('stored_path')
+    if stored_path:
+        file_path = os.path.join(UPLOAD_FOLDER, stored_path)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/existing-lists/<int:list_id>/data', methods=['GET'])
+def get_existing_list_data(list_id):
+    """Read and return the data from an Excel file"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT stored_path, title FROM existing_lists WHERE id=%s", (list_id,))
+    row = cur.fetchone()
+    cur.close()
+
+    if not row:
+        return jsonify({'success': False, 'message': 'List not found'}), 404
+
+    stored_path = row.get('stored_path')
+    file_path = os.path.join(UPLOAD_FOLDER, stored_path)
+
+    if not os.path.exists(file_path):
+        return jsonify({'success': False, 'message': 'File not found on disk'}), 404
+
+    try:
+        # Load Excel workbook
+        wb = load_workbook(file_path, data_only=True)
+        ws = wb.active
+
+        rows = []
+        headers = []
+
+        # Extract rows and headers
+        for idx, row_cells in enumerate(ws.iter_rows(values_only=True), 1):
+            if idx == 1:
+                # First row is headers
+                headers = [str(cell).strip() if cell else f'Column {i+1}' for i, cell in enumerate(row_cells)]
+            else:
+                # Data rows
+                row_data = {}
+                for i, cell in enumerate(row_cells):
+                    col_name = headers[i] if i < len(headers) else f'Column {i+1}'
+                    row_data[col_name] = cell if cell is not None else ''
+                rows.append(row_data)
+
+        wb.close()
+
+        return jsonify({
+            'success': True,
+            'title': row.get('title'),
+            'headers': headers,
+            'rows': rows,
+            'total': len(rows)
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error reading Excel file: {str(e)}'}), 400
+
+
+# ═══════════════════════════════════════════════════════
+#  EXISTING ALUMNI (ADMIN-ADDED ALUMNI LIST)
+# ═══════════════════════════════════════════════════════
+
+@app.route('/api/exist-alumni', methods=['GET'])
+def get_exist_alumni():
+    """Get all manually-added alumni by admin"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, name, email, phone, student_id, session, department, created_at
+        FROM alumni
+        WHERE status='approved' AND is_manually_added=1
+        ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    for r in rows:
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+    return jsonify(rows)
+
+
+@app.route('/api/exist-alumni', methods=['POST'])
+def add_exist_alumni():
+    """Add a single alumni manually (name, student_id, session, email, phone)"""
+    data = request.get_json() or {}
+    
+    required_fields = ['name', 'student_id', 'email', 'session', 'phone']
+    for field in required_fields:
+        if not data.get(field) or not str(data.get(field, '')).strip():
+            return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+    name = str(data['name']).strip()
+    student_id = str(data['student_id']).strip()
+    email = str(data['email']).strip()
+    session = str(data['session']).strip()
+    phone = str(data['phone']).strip()
+    department = str(data.get('department', 'ICE')).strip() or 'ICE'
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # Use a dummy password since admin adds them directly
+        dummy_password = generate_password_hash('ADMIN_ADDED_' + str(uuid.uuid4())[:8])
+        
+        cur.execute(
+            """INSERT INTO alumni (name, email, phone, student_id, session, department, 
+                                  password, status, user_type, is_manually_added)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (name, email, phone, student_id, session, department, dummy_password, 'approved', 'alumni', 1)
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        cur.close()
+        
+        return jsonify({
+            'success': True,
+            'id': new_id,
+            'message': f'Alumni "{name}" added successfully'
+        }), 201
+    
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        if 'Duplicate entry' in str(e) and 'email' in str(e):
+            return jsonify({'success': False, 'message': 'Email already exists'}), 409
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/exist-alumni/bulk', methods=['POST'])
+def bulk_add_exist_alumni():
+    """Bulk add alumni from Excel file data"""
+    data = request.get_json() or {}
+    alumni_records = data.get('alumni_records') or []
+    
+    if not alumni_records or not isinstance(alumni_records, list):
+        return jsonify({'success': False, 'message': 'alumni_records must be a non-empty list'}), 400
+    
+    conn = get_db()
+    cur = conn.cursor()
+    added_count = 0
+    errors = []
+    
+    for idx, record in enumerate(alumni_records):
+        try:
+            name = str(record.get('name', '')).strip()
+            student_id = str(record.get('student_id', '') or record.get('id', '')).strip()
+            email = str(record.get('email', '')).strip()
+            session = str(record.get('session', '')).strip()
+            phone = str(record.get('phone', '')).strip()
+            department = str(record.get('department', 'ICE')).strip() or 'ICE'
+            
+            # Validate required fields
+            if not name or not student_id or not email or not session or not phone:
+                errors.append({
+                    'row': idx + 1,
+                    'reason': 'Missing required fields (name, student_id, email, session, phone)'
+                })
+                continue
+            
+            dummy_password = generate_password_hash('ADMIN_ADDED_' + str(uuid.uuid4())[:8])
+            
+            cur.execute(
+                """INSERT INTO alumni (name, email, phone, student_id, session, department,
+                                      password, status, user_type, is_manually_added)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (name, email, phone, student_id, session, department, dummy_password, 'approved', 'alumni', 1)
+            )
+            added_count += 1
+        
+        except Exception as e:
+            error_msg = str(e)
+            if 'Duplicate entry' in error_msg and 'email' in error_msg:
+                error_msg = f'Email "{record.get("email")}" already exists'
+            errors.append({
+                'row': idx + 1,
+                'name': record.get('name', 'Unknown'),
+                'reason': error_msg
+            })
+    
+    try:
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        return jsonify({
+            'success': False,
+            'message': f'Error committing records: {str(e)}',
+            'added': added_count,
+            'errors': errors
+        }), 500
+    
+    cur.close()
+    
+    return jsonify({
+        'success': True,
+        'added': added_count,
+        'total_attempted': len(alumni_records),
+        'errors': errors if errors else [],
+        'message': f'Successfully added {added_count} alumni out of {len(alumni_records)} records'
+    }), 201
+
+
+@app.route('/api/exist-alumni/<int:alumni_id>', methods=['DELETE'])
+def delete_exist_alumni(alumni_id):
+    """Delete an existing alumni record"""
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("DELETE FROM alumni WHERE id=%s", (alumni_id,))
+    conn.commit()
+    cur.close()
+    
+    return jsonify({'success': True, 'message': 'Alumni record deleted successfully'})
+
+
+
+# ═══════════════════════════════════════════════════════
 #  STATS (dashboard summary)
 # ═══════════════════════════════════════════════════════
 
@@ -895,9 +1705,9 @@ def delete_job(jid):
 def get_stats():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni')")
+    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0)")
     total_alumni = cur.fetchone()['cnt']
-    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND user_type='student'")
+    cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='approved' AND user_type='student' AND (is_manually_added IS NULL OR is_manually_added=0)")
     total_students = cur.fetchone()['cnt']
     cur.execute("SELECT COUNT(*) AS cnt FROM alumni WHERE status='pending'")
     pending_cnt = cur.fetchone()['cnt']
