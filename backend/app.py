@@ -175,16 +175,11 @@ if config.AUTO_INIT_DB:
     except Exception as e:
         # Keep startup resilient; API endpoints will return DB errors if connectivity is still wrong.
         print(f"[DB INIT] Skipped due to error: {e}")
-else:
-    print('[DB INIT] Disabled by AUTO_INIT_DB or Render localhost DB fallback')
 
-if config.AUTO_MIGRATE_DB:
-    try:
-        ensure_db_migrations()
-    except Exception as e:
-        print(f"[DB MIGRATION] Skipped due to error: {e}")
-else:
-    print('[DB MIGRATION] Disabled by AUTO_MIGRATE_DB or Render localhost DB fallback')
+try:
+    ensure_db_migrations()
+except Exception as e:
+    print(f"[DB MIGRATION] Skipped due to error: {e}")
 
 
 def build_upload_url(filename):
@@ -1736,11 +1731,6 @@ def get_stats():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'success': True, 'message': 'ok'})
-
-
-@app.route('/', methods=['GET'])
-def root():
-    return jsonify({'success': True, 'message': 'AlumniConnect backend is running', 'health': '/api/health'})
 
 
 if __name__ == '__main__':
