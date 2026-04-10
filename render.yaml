@@ -1,18 +1,16 @@
 services:
   - type: web
     name: alumniconnect-api
-    env: python
+    runtime: python
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     healthCheckPath: /api/health
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
       - key: DEBUG
         value: "false"
-      - key: PORT
-        value: "10000"
       - key: SECRET_KEY
         generateValue: true
       - key: PUBLIC_BASE_URL
@@ -52,12 +50,11 @@ services:
 
   - type: web
     name: alumniconnect-web
-    env: static
-    plan: free
+    runtime: static
     rootDir: react-app
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
       - key: VITE_API_BASE_URL
         value: https://alumniconnect-api.onrender.com/api
