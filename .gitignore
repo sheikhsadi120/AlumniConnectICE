@@ -11,11 +11,17 @@ venv/
 
 # Flask uploads/cache
 backend/uploads/
+backend/mysql-local/data/
+backend/mysql-local/logs/
+backend/.env
+backend/.env.local
 
 # Node / Vite
 react-app/node_modules/
 react-app/dist/
 react-app/.env
+react-app/.env.local
+react-app/.env.production
 
 # OS / Editor
 .DS_Store
