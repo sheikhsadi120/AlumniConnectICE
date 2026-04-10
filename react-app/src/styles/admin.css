@@ -152,6 +152,10 @@
   color: #ffbcbc;
 }
 
+.admin-mobile-nav-toggle {
+  display: none;
+}
+
 /* ========== MAIN CONTENT ========== */
 .admin-main {
   margin-left: 260px;
@@ -1341,37 +1345,84 @@
     padding: 16px 14px 14px;
   }
 
-  .sidebar-nav {
+  .admin-mobile-nav-toggle {
+    margin: 0 10px 10px;
+    width: calc(100% - 20px);
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(2px);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .admin-mobile-nav-toggle span {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 10px 10px 12px;
-    white-space: nowrap;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 10px;
+    padding: 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.2s ease;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    white-space: normal;
+  }
+
+  .sidebar-nav.mobile-open {
+    max-height: 560px;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 8px;
+    margin-bottom: 10px;
+    overflow-y: auto;
   }
 
   .sidebar-nav > span {
     display: flex;
+    flex-direction: column;
+    width: 100%;
   }
 
   .sidebar-nav button {
-    width: auto;
-    min-width: max-content;
+    width: 100%;
+    min-width: 0;
     border-left: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: none;
     border-radius: 10px;
-    padding: 9px 12px;
+    padding: 10px 12px;
     font-size: 13px;
+    background: rgba(255,255,255,0.04);
   }
 
   .sidebar-nav button.active {
     border-left: none;
-    border-bottom-color: #ffd6ff;
+    border-bottom-color: transparent;
+    background: rgba(255,255,255,0.2);
   }
 
   .sidebar-section-label {
-    display: none;
+    display: block;
+    padding: 8px 4px 4px;
+    font-size: 10px;
   }
 
   .sidebar-logout {

@@ -682,11 +682,26 @@ img.ad-profile-avatar {
 
   .notif-dropdown {
     width: min(94vw, 340px);
-    right: -8px;
+    right: 0;
   }
 }
 
 @media (max-width: 640px) {
+  .notif-dropdown {
+    position: fixed;
+    top: 76px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(95vw, 360px);
+    max-height: min(72vh, 420px);
+    animation: none;
+  }
+
+  .notif-list {
+    max-height: min(62vh, 360px);
+  }
+
   .ad-topbar h1 {
     font-size: 18px;
   }

@@ -47,6 +47,7 @@ const PIE_COLORS = ['#0f4ea8','#00a3a3','#d7f4ff','#7c3aad','#b8e5f5']
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState('dashboard')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
 
@@ -165,6 +166,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeView === 'email-center') fetchEmailLogs()
   }, [activeView, fetchEmailLogs])
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth > 1024) setMobileMenuOpen(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const handleApprove = async (id) => {
     const { ok } = await approveAlumni(id)
@@ -704,11 +713,28 @@ export default function AdminDashboard() {
           <div className="logo-circle">A</div>
           <div><span>ALUMNICONNECT</span><small>Admin Panel</small></div>
         </div>
-        <nav className="sidebar-nav">
+
+        <button
+          className="admin-mobile-nav-toggle"
+          onClick={() => setMobileMenuOpen(v => !v)}
+          aria-expanded={mobileMenuOpen}
+          aria-label="Toggle menu"
+        >
+          <span><i className={`fa-solid ${mobileMenuOpen ? 'fa-xmark' : 'fa-bars'}`}></i> Menu</span>
+          <i className={`fa-solid ${mobileMenuOpen ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
+        </button>
+
+        <nav className={`sidebar-nav${mobileMenuOpen ? ' mobile-open' : ''}`}>
           {navItems.map(item => (
             <span key={item.view}>
               {item.section && <div className="sidebar-section-label">{item.section}</div>}
-              <button className={activeView === item.view ? 'active' : ''} onClick={() => setActiveView(item.view)}>
+              <button
+                className={activeView === item.view ? 'active' : ''}
+                onClick={() => {
+                  setActiveView(item.view)
+                  setMobileMenuOpen(false)
+                }}
+              >
                 <i className={`fa-solid ${item.icon}`}></i>
                 {item.label}
                 {item.badge > 0 && (
