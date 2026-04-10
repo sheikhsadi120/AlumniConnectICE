@@ -18,7 +18,8 @@ from pymysql import err as pymysql_err
 import config
 import os
 import uuid
-from datetime import date
+import random
+from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
@@ -170,6 +171,24 @@ def ensure_db_migrations():
             """
         )
 
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_otps (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                alumni_id   INT NOT NULL,
+                email       VARCHAR(255) NOT NULL,
+                user_type   ENUM('student','alumni') NOT NULL,
+                otp_hash    VARCHAR(255) NOT NULL,
+                expires_at  DATETIME NOT NULL,
+                used        TINYINT(1) NOT NULL DEFAULT 0,
+                attempts    INT NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE,
+                INDEX idx_password_reset_lookup (email, user_type, used, expires_at)
+            )
+            """
+        )
+
         # Ensure fund_transactions has newer workflow columns.
         fund_tx_columns = [
             ('request_id', "ALTER TABLE fund_transactions ADD COLUMN request_id INT DEFAULT NULL"),
@@ -312,40 +331,40 @@ def smtp_configured():
 
 
 def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'):
-        escaped_subject = str(subject or '')
-        escaped_preheader = str(preheader or '')
-        escaped_body = str(message or '').replace('\n', '<br>')
-        escaped_cta = str(cta_text or 'Open AlumniConnect')
-        base_url = config.PUBLIC_BASE_URL or 'http://localhost:5173'
-        return f"""
-        <html>
-            <body style=\"margin:0;padding:0;background:#f7f2ff;font-family:Inter,Segoe UI,Arial,sans-serif;color:#2d0a50;\">
-                <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:24px 10px;\">
-                    <tr>
-                        <td align=\"center\">
-                            <table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ecdffb;\">
-                                <tr>
-                                    <td style=\"padding:20px 26px;background:linear-gradient(135deg,#4f1c78,#a4508b);color:white;\">
-                                        <div style=\"font-size:12px;letter-spacing:1px;opacity:0.8;font-weight:700;\">ALUMNICONNECT</div>
-                                        <div style=\"font-size:24px;line-height:1.3;font-weight:700;margin-top:8px;\">{escaped_subject}</div>
-                                        <div style=\"font-size:13px;line-height:1.6;opacity:0.9;margin-top:8px;\">{escaped_preheader}</div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style=\"padding:26px;color:#4a3764;font-size:15px;line-height:1.7;\">{escaped_body}</td>
-                                </tr>
-                                <tr>
-                                    <td style=\"padding:0 26px 26px;\">
-                                        <a href=\"{base_url}\" style=\"display:inline-block;padding:11px 18px;background:linear-gradient(135deg,#5f2c82,#a4508b);color:#fff;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;\">{escaped_cta}</a>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-        </html>
-        """
+    escaped_subject = str(subject or '')
+    escaped_preheader = str(preheader or '')
+    escaped_body = str(message or '').replace('\n', '<br>')
+    escaped_cta = str(cta_text or 'Open AlumniConnect')
+    base_url = config.PUBLIC_BASE_URL or (config.CORS_ORIGINS[0] if config.CORS_ORIGINS else 'http://localhost:5173')
+    return f"""
+    <html>
+        <body style=\"margin:0;padding:0;background:#f7f2ff;font-family:Inter,Segoe UI,Arial,sans-serif;color:#2d0a50;\">
+            <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:24px 10px;\">
+                <tr>
+                    <td align=\"center\">
+                        <table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ecdffb;\">
+                            <tr>
+                                <td style=\"padding:20px 26px;background:linear-gradient(135deg,#4f1c78,#a4508b);color:white;\">
+                                    <div style=\"font-size:12px;letter-spacing:1px;opacity:0.8;font-weight:700;\">ALUMNICONNECT</div>
+                                    <div style=\"font-size:24px;line-height:1.3;font-weight:700;margin-top:8px;\">{escaped_subject}</div>
+                                    <div style=\"font-size:13px;line-height:1.6;opacity:0.9;margin-top:8px;\">{escaped_preheader}</div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style=\"padding:26px;color:#4a3764;font-size:15px;line-height:1.7;\">{escaped_body}</td>
+                            </tr>
+                            <tr>
+                                <td style=\"padding:0 26px 26px;\">
+                                    <a href=\"{base_url}\" style=\"display:inline-block;padding:11px 18px;background:linear-gradient(135deg,#5f2c82,#a4508b);color:#fff;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;\">{escaped_cta}</a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+    </html>
+    """
 
 
 def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniConnect'):
@@ -383,6 +402,40 @@ def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniC
                                 errors.append({'email': email, 'error': str(ex)})
 
         return {'sent': sent_count, 'failed': failed_count, 'errors': errors}
+
+
+def normalize_user_type(value):
+    user_type = (value or '').strip().lower()
+    if user_type in {'student', 'alumni'}:
+        return user_type
+    return None
+
+
+def create_password_reset_otp(conn, person, user_type):
+    otp = f"{random.randint(0, 999999):06d}"
+    otp_hash = generate_password_hash(otp)
+    expires_at = datetime.now() + timedelta(minutes=10)
+
+    cur = conn.cursor()
+    # Invalidate older active OTPs for the same mailbox and role.
+    cur.execute(
+        """
+        UPDATE password_reset_otps
+           SET used=1
+         WHERE email=%s AND user_type=%s AND used=0
+        """,
+        (person['email'], user_type),
+    )
+    cur.execute(
+        """
+        INSERT INTO password_reset_otps (alumni_id, email, user_type, otp_hash, expires_at)
+        VALUES (%s,%s,%s,%s,%s)
+        """,
+        (person['id'], person['email'], user_type, otp_hash, expires_at),
+    )
+    conn.commit()
+    cur.close()
+    return otp
 
 # ─── Global JSON error handlers ───────────────────────
 @app.errorhandler(Exception)
@@ -561,6 +614,140 @@ def student_login():
     })
 
 
+@app.route('/api/forgot-password/request-otp', methods=['POST'])
+def request_forgot_password_otp():
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    user_type = normalize_user_type(data.get('user_type'))
+
+    if not email or not user_type:
+        return jsonify({'success': False, 'message': 'Email and valid user type are required.'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, user_type FROM alumni WHERE email=%s LIMIT 1", (email,))
+    person = cur.fetchone()
+    cur.close()
+
+    # Do not expose account existence details.
+    if not person:
+        return jsonify({'success': True, 'message': 'If your account exists, an OTP has been sent to your email.'})
+
+    person_type = normalize_user_type(person.get('user_type') or 'alumni')
+    if person_type != user_type:
+        return jsonify({'success': True, 'message': 'If your account exists, an OTP has been sent to your email.'})
+
+    otp = create_password_reset_otp(conn, person, user_type)
+
+    try:
+        send_email(
+            [person['email']],
+            'AlumniConnect Password Reset OTP',
+            (
+                f"Hi {person.get('name') or 'there'},\n\n"
+                f"Your password reset code is: {otp}\n"
+                "This code is valid for 10 minutes.\n\n"
+                "If you did not request this, you can ignore this email."
+            ),
+            'Use this OTP to reset your AlumniConnect password.',
+            'Go to AlumniConnect',
+        )
+    except Exception as ex:
+        return jsonify({'success': False, 'message': f'Failed to send OTP email: {ex}'}), 500
+
+    return jsonify({'success': True, 'message': 'OTP sent to your email address.'})
+
+
+@app.route('/api/forgot-password/reset', methods=['POST'])
+def reset_password_with_otp():
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    user_type = normalize_user_type(data.get('user_type'))
+    otp = (data.get('otp') or '').strip()
+    new_password = data.get('new_password') or ''
+
+    if not email or not user_type or not otp or not new_password:
+        return jsonify({'success': False, 'message': 'Email, user type, OTP and new password are required.'}), 400
+
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'message': 'New password must be at least 6 characters.'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, user_type FROM alumni WHERE email=%s LIMIT 1", (email,))
+    person = cur.fetchone()
+    if not person:
+        cur.close()
+        return jsonify({'success': False, 'message': 'Account not found.'}), 404
+
+    person_type = normalize_user_type(person.get('user_type') or 'alumni')
+    if person_type != user_type:
+        cur.close()
+        return jsonify({'success': False, 'message': 'User type does not match this account.'}), 400
+
+    cur.execute(
+        """
+        SELECT id, otp_hash, expires_at, attempts
+        FROM password_reset_otps
+        WHERE email=%s AND user_type=%s AND used=0
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (email, user_type),
+    )
+    otp_row = cur.fetchone()
+
+    if not otp_row:
+        cur.close()
+        return jsonify({'success': False, 'message': 'OTP not found. Please request a new one.'}), 400
+
+    now = datetime.now()
+    if otp_row['expires_at'] <= now:
+        cur.execute("UPDATE password_reset_otps SET used=1 WHERE id=%s", (otp_row['id'],))
+        conn.commit()
+        cur.close()
+        return jsonify({'success': False, 'message': 'OTP has expired. Please request a new one.'}), 400
+
+    if int(otp_row.get('attempts') or 0) >= 5:
+        cur.execute("UPDATE password_reset_otps SET used=1 WHERE id=%s", (otp_row['id'],))
+        conn.commit()
+        cur.close()
+        return jsonify({'success': False, 'message': 'Too many failed attempts. Request a new OTP.'}), 429
+
+    if not check_password_hash(otp_row['otp_hash'], otp):
+        next_attempts = int(otp_row.get('attempts') or 0) + 1
+        cur.execute(
+            "UPDATE password_reset_otps SET attempts=%s, used=%s WHERE id=%s",
+            (next_attempts, 1 if next_attempts >= 5 else 0, otp_row['id']),
+        )
+        conn.commit()
+        cur.close()
+        return jsonify({'success': False, 'message': 'Invalid OTP.'}), 400
+
+    hashed_password = generate_password_hash(new_password)
+    cur.execute("UPDATE alumni SET password=%s WHERE id=%s", (hashed_password, person['id']))
+    cur.execute("UPDATE password_reset_otps SET used=1 WHERE id=%s", (otp_row['id'],))
+    conn.commit()
+    cur.close()
+
+    try:
+        send_email(
+            [person['email']],
+            'AlumniConnect Password Updated',
+            (
+                f"Hi {person.get('name') or 'there'},\n\n"
+                "Your AlumniConnect password was successfully changed.\n"
+                "If this was not you, please contact admin immediately."
+            ),
+            'Your password has been changed.',
+            'Open AlumniConnect',
+        )
+    except Exception:
+        pass
+
+    return jsonify({'success': True, 'message': 'Password reset successful. You can now log in.'})
+
+
 # ═══════════════════════════════════════════════════════
 #  ALUMNI REGISTRATION + MANAGEMENT
 # ═══════════════════════════════════════════════════════
@@ -579,6 +766,9 @@ def register():
     for f in required:
         if not data.get(f):
             return jsonify({'success': False, 'message': f'{f} is required'}), 400
+
+    if len((data.get('password') or '')) < 6:
+        return jsonify({'success': False, 'message': 'Password must be at least 6 characters.'}), 400
 
     # Save profile photo if provided
     photo_filename = None

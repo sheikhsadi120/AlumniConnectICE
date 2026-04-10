@@ -339,9 +339,9 @@ body::before {
   animation: float 4s ease-in-out infinite;
 }
 
-.badge-f1 { top: 38%; left: 2%; animation-delay: 0.3s; }
+.badge-f1 { top: 43%; left: 2%; animation-delay: 0.3s; }
 .badge-f2 { top: 18%; left: 38%; animation-delay: 1s; }
-.badge-f3 { top: 38%; right: 2%; animation-delay: 1.7s; }
+.badge-f3 { top: 43%; right: 2%; animation-delay: 1.7s; }
 
 @keyframes float {
   0%, 100% { transform: translateY(0); }
@@ -402,9 +402,184 @@ body::before {
 
 /* RESPONSIVE */
 @media(max-width: 1000px) {
-  .hero { flex-direction: column; text-align: center; }
+  .hero {
+    flex-direction: column;
+    text-align: center;
+    padding: 18px 14px 28px;
+    gap: 10px;
+  }
   .hero-left, .hero-right { width: 100%; }
-  .glass-card { margin-top: 40px; width: 100%; }
+  .hero h1 {
+    font-size: clamp(32px, 8vw, 46px);
+    margin: 16px 0;
+  }
+  .hero p {
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .feature-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .feature-tags span {
+    margin-right: 0;
+  }
+  .buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .btn-primary,
+  .btn-outline {
+    width: min(100%, 320px);
+    margin-right: 0;
+  }
+  .hero-right .glass-card {
+    width: min(100%, 420px);
+    margin: 14px auto 0;
+  }
   .cards { flex-direction: column; }
   .feature-card { width: 100%; }
+}
+
+@media (max-width: 992px) {
+  body::before {
+    background-size: min(72vmin, 420px);
+    opacity: 0.08;
+  }
+
+  .navbar {
+    padding: 8px 12px;
+    border-radius: 0;
+  }
+
+  .navbar .container-xl {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .navbar .navbar-brand {
+    font-size: 14px !important;
+    gap: 8px !important;
+    letter-spacing: 0.2px !important;
+    max-width: calc(100vw - 90px);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .navbar .navbar-brand img:first-child {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .navbar .navbar-brand img:last-child {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .navbar .navbar-collapse {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .navbar .nav-link {
+    padding: 8px 2px !important;
+    font-size: 14px;
+  }
+
+  .navbar .dropdown-menu {
+    margin-top: 6px;
+    width: 100%;
+  }
+
+  .features-section {
+    padding: 72px 18px;
+    border-top-left-radius: 28px;
+    border-top-right-radius: 28px;
+  }
+
+  .section-header {
+    margin-bottom: 34px;
+  }
+
+  .section-header h2 {
+    font-size: clamp(24px, 6vw, 32px);
+  }
+}
+
+@media (max-width: 768px) {
+  .alumni-illustration {
+    height: 250px;
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+
+  .alumni-node span {
+    font-size: 10px;
+  }
+
+  .alumni-node small {
+    font-size: 9px;
+  }
+
+  .alumni-node .designation {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .uni-node {
+    font-size: 11px;
+    padding: 8px 12px;
+  }
+
+  .uni-icon {
+    font-size: 16px;
+  }
+
+  .badge-float {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+}
+
+@media (max-width: 576px) {
+  .hero {
+    padding: 14px 10px 24px;
+  }
+
+  .hero .badge {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  .secure {
+    font-size: 12px;
+    margin-top: 10px;
+  }
+
+  .hero-right .glass-card {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .badge-float {
+    display: none;
+  }
+
+  .node-3,
+  .node-4 {
+    top: 66%;
+  }
 }

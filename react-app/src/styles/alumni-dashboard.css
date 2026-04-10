@@ -518,6 +518,142 @@
   cursor: default;
 }
 .notif-item:last-child { border-bottom: none; }
+
+@media (max-width: 1024px) {
+  .ad-wrapper {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .ad-sidebar {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    box-shadow: none;
+  }
+
+  .ad-sidebar-logo {
+    padding: 16px 14px 12px;
+  }
+
+  .ad-alumni-card {
+    margin: 10px;
+    padding: 10px 12px;
+  }
+
+  .ad-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 10px;
+    white-space: nowrap;
+  }
+
+  .ad-nav-btn {
+    width: auto;
+    min-width: max-content;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 10px;
+    padding: 9px 12px;
+  }
+
+  .ad-nav-btn.active {
+    border-left-color: transparent;
+    border-bottom-color: #ffd6ff;
+  }
+
+  .ad-sidebar-logout {
+    margin: 0 10px 12px;
+    align-self: flex-start;
+  }
+
+  .ad-main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .ad-topbar {
+    padding: 14px 14px;
+    flex-wrap: wrap;
+  }
+
+  .ad-topbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ad-content {
+    padding: 18px 14px;
+  }
+
+  .ad-stat-grid,
+  .ad-events-grid,
+  .ad-training-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ad-profile-card {
+    padding: 18px 14px;
+    gap: 16px;
+  }
+
+  .ad-profile-row {
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+
+  .ad-profile-row span {
+    min-width: 0;
+  }
+
+  .ad-membership-card {
+    max-width: 100%;
+  }
+
+  .ad-mem-header,
+  .ad-mem-body,
+  .ad-mem-notice {
+    padding-left: 14px;
+    padding-right: 14px;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .notif-dropdown {
+    width: min(94vw, 340px);
+    right: -8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ad-topbar h1 {
+    font-size: 18px;
+  }
+
+  .ad-profile-avatar.large {
+    width: 74px;
+    height: 74px;
+    font-size: 28px;
+  }
+
+  .ad-btn-edit,
+  .ad-btn-save,
+  .ad-btn-cancel,
+  .ad-btn-join,
+  .ad-btn-enroll {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ad-form-actions {
+    flex-direction: column;
+  }
+}
 .notif-item:hover { background: #faf8ff; }
 .notif-item.unread { background: #f6f1ff; }
 .notif-item.unread:hover { background: #eee6ff; }

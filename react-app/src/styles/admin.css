@@ -1322,3 +1322,134 @@
     min-width: 100%;
   }
 }
+
+@media (max-width: 1024px) {
+  .admin-wrapper {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .admin-sidebar {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    box-shadow: none;
+  }
+
+  .sidebar-logo {
+    padding: 16px 14px 14px;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 10px 10px 12px;
+    white-space: nowrap;
+  }
+
+  .sidebar-nav > span {
+    display: flex;
+  }
+
+  .sidebar-nav button {
+    width: auto;
+    min-width: max-content;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+
+  .sidebar-nav button.active {
+    border-left: none;
+    border-bottom-color: #ffd6ff;
+  }
+
+  .sidebar-section-label {
+    display: none;
+  }
+
+  .sidebar-logout {
+    padding: 10px;
+  }
+
+  .admin-main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .admin-topbar {
+    padding: 14px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .topbar-search {
+    order: 3;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .admin-content {
+    padding: 18px 14px;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .events-grid,
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 10px 10px;
+    font-size: 12px;
+  }
+
+  .modal-overlay {
+    padding: 14px 10px;
+  }
+
+  .modal-box {
+    width: 100%;
+    padding: 20px 14px;
+  }
+
+  .notif-dropdown {
+    width: min(94vw, 340px);
+    right: -6px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-badge {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .existing-list-header,
+  .events-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .btn-add-event {
+    width: 100%;
+    justify-content: center;
+  }
+}

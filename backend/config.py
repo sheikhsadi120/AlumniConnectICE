@@ -20,13 +20,17 @@ def _load_dotenv_file(path):
 			if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
 				value = value[1:-1]
 
-			os.environ.setdefault(key, value)
+			if key in _EXTERNALLY_DEFINED_ENV_KEYS:
+				continue
+			os.environ[key] = value
 
 
 _ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 _BACKEND_DIR = os.path.dirname(__file__)
+_EXTERNALLY_DEFINED_ENV_KEYS = set(os.environ.keys())
 
-# Load local env files if present (without overriding already-exported env vars).
+# Load local env files if present.
+# Earlier files can be overridden by later files, but already-exported OS env vars win.
 for _dotenv_path in (
 	os.path.join(_ROOT_DIR, '.env'),
 	os.path.join(_ROOT_DIR, '.env.local'),
@@ -76,7 +80,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'change-me-in-production')
 PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
 
 # CORS
-CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), 'http://localhost:5173')
+CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), 'http://localhost:5173,http://localhost:5174')
 
 # Admin credentials
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')

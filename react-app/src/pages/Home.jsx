@@ -67,18 +67,18 @@ function Home() {
                   <div className="alumni-node node-2">
                     <div className="avatar">S</div>
                     <span>Shawon</span>
-                    <small>ICE'19</small>
-                    <small className="designation">Manager @ HSBC</small>
+                    <small>ICE'23</small>
+                    <small className="designation">SWE @meta</small>
                   </div>
                   <div className="alumni-node node-3">
                     <div className="avatar">E</div>
                     <span>Ety</span>
-                    <small>ICE'11</small>
+                    <small>ICE'24</small>
                     <small className="designation">Engineer @ BPDB</small>
                   </div>
                   <div className="alumni-node node-4">
                     <div className="avatar">T</div>
-                    <span>Tanvir</span>
+                    <span>Parvez</span>
                     <small>ICE'23</small>
                     <small className="designation">CEO @ StartupBD</small>
                   </div>

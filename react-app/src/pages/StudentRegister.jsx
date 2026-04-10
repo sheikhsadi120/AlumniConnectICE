@@ -6,6 +6,7 @@ import '../styles/login.css'
 import { register } from '../services/api'
 
 function StudentRegister() {
+  const PASSWORD_MIN_LENGTH = 6
   const [submitted, setSubmitted] = useState(false)
   const [confirmStyle, setConfirmStyle] = useState({})
   const [confirmPlaceholder, setConfirmPlaceholder] = useState('********')
@@ -64,6 +65,10 @@ function StudentRegister() {
       setConfirmStyle({ border: '2px solid #ff6b6b' })
       setConfirmPlaceholder('Passwords do not match!')
       setFields(prev => ({ ...prev, confirm_password: '' }))
+      return
+    }
+    if ((fields.password || '').length < PASSWORD_MIN_LENGTH) {
+      setApiError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`)
       return
     }
     if (!photoFile)  { alert('Please upload your photo.'); return }
@@ -183,7 +188,7 @@ function StudentRegister() {
                       <Col xs={12}>
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Password</Form.Label>
-                          <Form.Control type="password" name="password" placeholder="********" required value={fields.password} onChange={handleChange} />
+                          <Form.Control type="password" name="password" placeholder="********" minLength={PASSWORD_MIN_LENGTH} required value={fields.password} onChange={handleChange} />
                         </Form.Group>
                       </Col>
                       <Col xs={12}>
@@ -194,6 +199,7 @@ function StudentRegister() {
                             name="confirm_password"
                             placeholder={confirmPlaceholder}
                             style={confirmStyle}
+                            minLength={PASSWORD_MIN_LENGTH}
                             value={fields.confirm_password}
                             onChange={handleChange}
                             required

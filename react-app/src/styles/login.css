@@ -77,9 +77,70 @@
 .login-card .register-text { margin-top: 15px; font-size: 14px; }
 .login-card .register-text a { color: #ffd6ff; text-decoration: underline; }
 
+.login-card .forgot-password-row {
+  margin-top: -6px;
+}
+
+.login-card .forgot-password-link {
+  color: #ffe6ff;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.login-card .forgot-password-link:hover {
+  color: #fff;
+}
+
 .login-card .back-home { margin-top: 20px; }
 .login-card .back-home a { color: white; text-decoration: underline; font-size: 14px; }
 .login-card .back-home a:hover { color: #ffd6ff; }
+
+@media (max-width: 768px) {
+  .login-section {
+    padding: 8px 12px 42px;
+    min-height: auto;
+  }
+
+  .login-card {
+    max-width: 100%;
+    padding: 26px 18px;
+    border-radius: 16px;
+  }
+
+  .login-card h2 {
+    font-size: 23px;
+    margin-bottom: 20px;
+  }
+
+  .login-card form {
+    gap: 12px;
+  }
+
+  .login-card .btn-primary {
+    margin-top: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 22px 14px;
+  }
+
+  .login-card h2 {
+    font-size: 21px;
+  }
+
+  .login-card input {
+    font-size: 16px;
+    padding: 11px 12px;
+  }
+
+  .login-card label,
+  .login-card .register-text,
+  .login-card .back-home a {
+    font-size: 13px;
+  }
+}
 
 /* Pending message */
 .pending-msg {

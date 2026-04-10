@@ -55,19 +55,19 @@ function Navbar() {
                   <i className="fa-solid fa-user-shield me-2"></i> Admin Login
                 </NavDropdown.Item>
                 <NavDropdown.Item as={Link} to="/alumni-login">
-                  <i className="fa-solid fa-user me-2"></i> Alumni Login
+                  <i className="fa-solid fa-user-graduate me-2"></i> Alumni Login
                 </NavDropdown.Item>
                 <NavDropdown.Item as={Link} to="/student-login">
-                  <i className="fa-solid fa-user-graduate me-2"></i> Student Login
+                  <i className="fa-solid fa-user me-2"></i> Student Login
                 </NavDropdown.Item>
               </NavDropdown>
             ) : (
               <>
                 <Nav.Link as={Link} to="/alumni-login" style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
-                  <i className="fa-solid fa-user me-1"></i> Alumni Login
+                  <i className="fa-solid fa-user-graduate me-1"></i> Alumni Login
                 </Nav.Link>
                 <Nav.Link as={Link} to="/student-login" style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
-                  <i className="fa-solid fa-user-graduate me-1"></i> Student Login
+                  <i className="fa-solid fa-user me-1"></i> Student Login
                 </Nav.Link>
                 <Nav.Link as={Link} to="/admin-login" style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
                   <i className="fa-solid fa-user-shield me-1"></i> Admin Login

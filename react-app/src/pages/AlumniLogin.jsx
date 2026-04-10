@@ -38,7 +38,7 @@ function AlumniLogin() {
           <Row className="justify-content-center">
             <Col xs={12} sm={10} md={7} lg={5}>
               <div className="login-card">
-                <h2><i className="fa-solid fa-user me-2"></i>Alumni Login</h2>
+                <h2><i className="fa-solid fa-user-graduate me-2"></i>Alumni Login</h2>
 
                 <Form onSubmit={handleSubmit}>
                   <Form.Group className="mb-3 text-start">
@@ -50,6 +50,10 @@ function AlumniLogin() {
                     <Form.Label>Enter Password</Form.Label>
                     <Form.Control type="password" name="password" placeholder="********" required />
                   </Form.Group>
+
+                  <div className="forgot-password-row text-start mb-2">
+                    <Link to="/alumni-forgot-password" className="forgot-password-link">Forgot password?</Link>
+                  </div>
 
                   {error && <Alert variant="danger" className="py-2">{error}</Alert>}
 

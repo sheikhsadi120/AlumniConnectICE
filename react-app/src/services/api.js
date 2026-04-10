@@ -37,6 +37,10 @@ async function request(path, options = {}) {
 export const adminLogin   = (username, password)  => request('/admin-login',  { method:'POST', body: JSON.stringify({ username, password }) });
 export const alumniLogin  = (email, password)     => request('/alumni-login', { method:'POST', body: JSON.stringify({ email, password }) });
 export const studentLogin = (email, password)     => request('/student-login', { method:'POST', body: JSON.stringify({ email, password }) });
+export const requestPasswordResetOtp = (email, user_type) =>
+  request('/forgot-password/request-otp', { method:'POST', body: JSON.stringify({ email, user_type }) });
+export const resetPasswordWithOtp = (email, user_type, otp, new_password) =>
+  request('/forgot-password/reset', { method:'POST', body: JSON.stringify({ email, user_type, otp, new_password }) });
 export const register    = (formData) => {
   // formData is a FormData object (contains file)
   return fetch(`${BASE_URL}/register`, { method: 'POST', body: formData })
