@@ -29,8 +29,8 @@ function ForgotPasswordBase({ userType, title, loginPath }) {
       }
       setSuccess(data.message || 'OTP sent to your email.')
       setStep('reset')
-    } catch (_) {
-      setError('Cannot reach server. Please make sure the backend is running.')
+    } catch (err) {
+      setError(err?.message || 'Cannot reach server. Please make sure the backend is running.')
     } finally {
       setLoading(false)
     }
@@ -62,8 +62,8 @@ function ForgotPasswordBase({ userType, title, loginPath }) {
       setOtp('')
       setNewPassword('')
       setConfirmPassword('')
-    } catch (_) {
-      setError('Cannot reach server. Please make sure the backend is running.')
+    } catch (err) {
+      setError(err?.message || 'Cannot reach server. Please make sure the backend is running.')
     } finally {
       setLoading(false)
     }

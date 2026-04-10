@@ -103,9 +103,9 @@ function StudentRegister() {
         setShowReview(false)
         setApiError(data.message || 'Registration failed. Please try again.')
       }
-    } catch (_) {
+    } catch (err) {
       setShowReview(false)
-      setApiError('Cannot reach server. Please make sure the backend is running.')
+      setApiError(err?.message || 'Cannot reach server. Please make sure the backend is running.')
     } finally {
       setLoading(false)
     }
