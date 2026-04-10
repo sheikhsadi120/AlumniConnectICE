@@ -33,13 +33,13 @@ function Home() {
                       onClick={() => { setShowDropdown(false); navigate('/student-login') }}
                       style={{ fontWeight: 600, color: '#f8f5ff', fontSize: 14 }}
                     >
-                      🎓 Student Login
+                      👤 Student Login
                     </Dropdown.Item>
                     <Dropdown.Item
                       onClick={() => { setShowDropdown(false); navigate('/alumni-login') }}
                       style={{ fontWeight: 600, color: '#f8f5ff', fontSize: 14 }}
                     >
-                      👤 Alumni Login
+                      🎓 Alumni Login
                     </Dropdown.Item>
                   </Dropdown.Menu>
                 </Dropdown>
