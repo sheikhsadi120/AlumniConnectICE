@@ -37,6 +37,10 @@ html, body, #root {
   width: 42px;
   height: 42px;
   object-fit: contain;
+  padding: 3px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.65);
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
 }
 .ac-navbar-link,
