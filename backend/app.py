@@ -296,6 +296,13 @@ def ensure_db_migrations():
             if e.args[0] != 1060:  # Column already exists is OK
                 print(f"[DB MIGRATION] Note (non-fatal): {e}")
 
+        # Legacy deployments may miss events.created_at; keep sorting-compatible schema.
+        try:
+            cur.execute("ALTER TABLE events ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:  # Column already exists is OK
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
+
         cur.close()
     finally:
         conn.close()
@@ -1281,7 +1288,14 @@ def reject_upgrade(aid):
 def get_events():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM events ORDER BY created_at DESC, id DESC")
+    try:
+        cur.execute("SELECT * FROM events ORDER BY created_at DESC, id DESC")
+    except pymysql_err.OperationalError as e:
+        # Fallback for old schema that does not yet have created_at.
+        if e.args and e.args[0] == 1054:
+            cur.execute("SELECT * FROM events ORDER BY id DESC")
+        else:
+            raise
     rows = cur.fetchall()
     cur.close()
     # stringify dates
