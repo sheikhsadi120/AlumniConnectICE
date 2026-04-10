@@ -38,7 +38,7 @@ services:
       - key: MYSQL_CONNECT_TIMEOUT
         value: "10"
       - key: AUTO_INIT_DB
-        value: "false"
+        value: "true"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

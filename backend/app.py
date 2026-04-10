@@ -114,17 +114,33 @@ def init_db_tables_from_schema():
             continue
         statements.append(stmt)
 
-    bootstrap_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=False, autocommit=True))
+    # Prefer connecting to an existing DB first (works for managed providers where CREATE DATABASE is restricted).
+    db_conn = None
+    try:
+        db_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
+    except pymysql_err.OperationalError as e:
+        code = e.args[0] if e.args else None
+        if code != 1049:  # Unknown database
+            raise
+
+        # Database does not exist. Try to create it if privileges allow.
+        bootstrap_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=False, autocommit=True))
+        try:
+            cur = bootstrap_conn.cursor()
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+            cur.close()
+        finally:
+            bootstrap_conn.close()
+
+        db_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
 
     try:
-        cur = bootstrap_conn.cursor()
-        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-        cur.execute(f"USE `{config.MYSQL_DB}`")
+        cur = db_conn.cursor()
         for stmt in statements:
             cur.execute(stmt)
         cur.close()
     finally:
-        bootstrap_conn.close()
+        db_conn.close()
 
 
 def ensure_db_migrations():
@@ -494,6 +510,14 @@ def handle_exception(e):
                 'message': 'Database SSL error. For Aiven set MYSQL_SSL_MODE=required and configure MYSQL_SSL_CA if needed.'
             }), 503
 
+    if isinstance(e, pymysql_err.ProgrammingError):
+        code = e.args[0] if e.args else None
+        if code in {1146, 1054}:
+            return jsonify({
+                'success': False,
+                'message': 'Database schema is not ready. Enable AUTO_INIT_DB or run schema.sql and migrate.py once.'
+            }), 503
+
     if config.DEBUG:
         import traceback
         return jsonify({'success': False, 'message': str(e), 'trace': traceback.format_exc()[-500:]}), 500
@@ -847,8 +871,11 @@ def register():
         new_id = cur.lastrowid
     except Exception as e:
         conn.rollback()
-        if 'Duplicate entry' in str(e):
+        code = e.args[0] if getattr(e, 'args', None) else None
+        if 'Duplicate entry' in str(e) or code == 1062:
             return jsonify({'success': False, 'message': 'Email already registered'}), 409
+        if code in {1146, 1054}:
+            return jsonify({'success': False, 'message': 'Database tables are not initialized yet. Please contact admin.'}), 503
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
         cur.close()
