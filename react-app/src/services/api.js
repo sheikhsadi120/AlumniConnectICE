@@ -80,6 +80,11 @@ export const getUploadUrl = (pathOrUrl) => {
   return `${getActiveUploadBaseUrl()}/${String(pathOrUrl).replace(/^\/+/, '')}`;
 };
 
+export const resolveAvatarUrl = (userLike) => {
+  if (!userLike || typeof userLike !== 'object') return null;
+  return getUploadUrl(userLike.photo_url || userLike.photo || userLike.avatar || null);
+};
+
 async function request(path, options = {}) {
   const hasBody = options.body !== undefined && options.body !== null;
   const bodyIsFormData = typeof FormData !== 'undefined' && hasBody && options.body instanceof FormData;

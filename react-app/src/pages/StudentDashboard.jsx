@@ -14,7 +14,7 @@ import {
   getEnrolledTrainingIds,
   getRegisteredEventIds,
   requestUpgrade,
-  getUploadUrl,
+  resolveAvatarUrl,
 } from '../services/api'
 
 const sidebarItems = [
@@ -45,24 +45,34 @@ export default function StudentDashboard() {
 
   // Persist user info across refreshes using localStorage
   const alumniInfo = (() => {
+    let base = null
     if (location.state?.alumni) {
-      localStorage.setItem('studentUser', JSON.stringify(location.state.alumni))
-      return location.state.alumni
+      base = location.state.alumni
+      localStorage.setItem('studentUser', JSON.stringify(base))
     }
-    try {
-      const stored = localStorage.getItem('studentUser')
-      if (stored) return JSON.parse(stored)
-    } catch (_) {}
+    if (!base) {
+      try {
+        const stored = localStorage.getItem('studentUser')
+        if (stored) base = JSON.parse(stored)
+      } catch (_) {}
+    }
+    if (!base) {
+      base = {
+        name: 'Student User',
+        email: 'student@example.com',
+        phone: '+8801700000000',
+        department: 'ICE',
+        student_id: '1804001',
+        session: '2018-2022',
+        company: 'TechCorp',
+        designation: 'Software Engineer',
+        status: 'approved',
+      }
+    }
+
     return {
-      name: 'Student User',
-      email: 'student@example.com',
-      phone: '+8801700000000',
-      department: 'ICE',
-      student_id: '1804001',
-      session: '2018-2022',
-      company: 'TechCorp',
-      designation: 'Software Engineer',
-      status: 'approved',
+      ...base,
+      photo_url: resolveAvatarUrl(base),
     }
   })()
 
@@ -125,6 +135,13 @@ export default function StudentDashboard() {
   const [upgradeSubmitting, setUpgradeSubmitting] = useState(false)
   const [upgradeMsg, setUpgradeMsg] = useState('')
   const [upgradeMsgKind, setUpgradeMsgKind] = useState('success')
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
+
+  const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
+
+  useEffect(() => {
+    setAvatarLoadFailed(false)
+  }, [profileAvatarUrl])
 
   // Load events, trainings and alumni directory from API
   useEffect(() => {
@@ -432,8 +449,8 @@ export default function StudentDashboard() {
                 </div>
               )}
             </div>
-            {profile.photo_url
-              ? <img src={profile.photo_url} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} />
+            {(profileAvatarUrl && !avatarLoadFailed)
+              ? <img src={profileAvatarUrl} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
               : <div className="ad-topbar-avatar">{profile.name[0]}</div>
             }
             <div className="ad-topbar-info">
@@ -663,8 +680,8 @@ export default function StudentDashboard() {
                 <i className="fa-solid fa-user" style={{color:'#a4508b'}}></i> Quick Profile
               </div>
               <div className="ad-profile-card">
-                {profile.photo_url
-                  ? <img src={profile.photo_url} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} />
+                {(profileAvatarUrl && !avatarLoadFailed)
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
                   : <div className="ad-profile-avatar">{profile.name[0]}</div>
                 }
                 <div className="ad-profile-details">
@@ -808,8 +825,8 @@ export default function StudentDashboard() {
                         fontSize:18,fontWeight:800,color:'white',
                         boxShadow:'0 3px 10px rgba(95,44,130,0.22)',
                       }}>
-                        {a.photo
-                          ? <img src={getUploadUrl(a.photo)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                        {resolveAvatarUrl(a)
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -953,8 +970,8 @@ export default function StudentDashboard() {
                         fontSize:18,fontWeight:800,color:'white',
                         boxShadow:'0 3px 10px rgba(26,110,181,0.22)',
                       }}>
-                        {a.photo
-                          ? <img src={getUploadUrl(a.photo)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                        {resolveAvatarUrl(a)
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -1011,8 +1028,8 @@ export default function StudentDashboard() {
                 <i className="fa-solid fa-user-circle" style={{color:'#a4508b'}}></i> My Profile
               </div>
               <div className="ad-profile-card big">
-                {profile.photo_url
-                  ? <img src={profile.photo_url} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} />
+                {(profileAvatarUrl && !avatarLoadFailed)
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
                   : <div className="ad-profile-avatar large">{profile.name[0]}</div>
                 }
                 {!editMode ? (
@@ -1490,8 +1507,8 @@ export default function StudentDashboard() {
                 fontSize:36,fontWeight:800,color:'white',
                 marginTop:-48,overflow:'hidden',boxShadow:'0 6px 24px rgba(95,44,130,0.25)',
               }}>
-                {selectedAlumni.photo
-                  ? <img src={getUploadUrl(selectedAlumni.photo)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                {resolveAvatarUrl(selectedAlumni)
+                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                   : selectedAlumni.name[0].toUpperCase()
                 }
               </div>

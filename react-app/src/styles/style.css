@@ -12,6 +12,58 @@ html, body, #root {
 :root {
   --app-watermark-logo: url('/assets/ice-logo-watermark.png');
 }
+.ac-navbar {
+  background: linear-gradient(90deg, #5f2c82, #a4508b);
+  padding: 10px 0;
+}
+.ac-navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff !important;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+.ac-navbar-main-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.ac-navbar-seal {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
+}
+.ac-navbar-link,
+.ac-navbar-dropdown-title {
+  color: rgba(255, 255, 255, 0.92) !important;
+  font-weight: 600;
+  padding: 9px 12px !important;
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+.ac-navbar-link:hover,
+.ac-navbar-link:focus,
+.ac-navbar-dropdown-title:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff !important;
+}
+.ac-navbar-toggle {
+  border-color: rgba(255, 255, 255, 0.45) !important;
+}
+.ac-navbar-toggle .navbar-toggler-icon {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255,255,255,0.94%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+.ac-navbar-dropdown .dropdown-menu {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+}
 
 body {
   font-family: 'Inter', sans-serif;
@@ -510,6 +562,34 @@ body::before {
 
   .section-header h2 {
     font-size: clamp(24px, 6vw, 32px);
+  }
+  .ac-navbar-brand {
+    font-size: 15px;
+    gap: 8px;
+  }
+
+  .ac-navbar-title {
+    max-width: 168px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ac-navbar-seal {
+    width: 34px;
+    height: 34px;
+  }
+
+  .ac-navbar-links {
+    margin-top: 10px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 12px;
+    padding: 8px;
+  }
+
+  .ac-navbar-link,
+  .ac-navbar-dropdown-title {
+    width: 100%;
   }
 }
 

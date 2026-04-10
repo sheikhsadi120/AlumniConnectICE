@@ -79,6 +79,7 @@
   text-align: left;
   border-left: 3px solid transparent;
   font-family: 'Inter', sans-serif;
+  border-radius: 0 12px 12px 0;
 }
 .ad-nav-btn i { width: 18px; text-align: center; }
 .ad-nav-btn:hover { background: rgba(255,255,255,0.07); color: white; }
@@ -130,6 +131,11 @@
   color: white; font-weight: 800; font-size: 16px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+}
+img.ad-topbar-avatar,
+img.ad-profile-avatar {
+  display: block;
+  object-fit: cover;
 }
 .ad-topbar-info { display: flex; flex-direction: column; }
 .ad-topbar-info strong { font-size: 13px; color: #2d0a50; font-weight: 700; }
@@ -526,11 +532,13 @@
   }
 
   .ad-sidebar {
-    position: relative;
+    position: sticky;
+    top: 0;
     width: 100%;
     height: auto;
     min-height: auto;
-    box-shadow: none;
+    box-shadow: 0 8px 18px rgba(45,10,80,0.24);
+    z-index: 220;
   }
 
   .ad-sidebar-logo {
@@ -550,6 +558,7 @@
     overflow-y: hidden;
     padding: 10px;
     white-space: nowrap;
+    scrollbar-width: thin;
   }
 
   .ad-nav-btn {
@@ -559,6 +568,7 @@
     border-bottom: 2px solid transparent;
     border-radius: 10px;
     padding: 9px 12px;
+    background: rgba(255,255,255,0.06);
   }
 
   .ad-nav-btn.active {
@@ -584,6 +594,8 @@
   .ad-topbar-right {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 10px;
   }
 
   .ad-content {
@@ -633,6 +645,17 @@
 @media (max-width: 640px) {
   .ad-topbar h1 {
     font-size: 18px;
+  }
+
+  .ad-topbar-info {
+    min-width: 0;
+  }
+
+  .ad-topbar-info strong {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ad-profile-avatar.large {

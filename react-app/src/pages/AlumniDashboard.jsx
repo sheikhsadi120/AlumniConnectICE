@@ -16,7 +16,7 @@ import {
   getFundRequests,
   getTransactions,
   addTransaction,
-  getUploadUrl,
+  resolveAvatarUrl,
 } from '../services/api'
 
 const sidebarItems = [
@@ -97,6 +97,7 @@ export default function AlumniDashboard() {
       ...base,
       current_job_start_date: base.current_job_start_date || '',
       past_jobs: normalizePastJobs(base.past_jobs),
+      photo_url: resolveAvatarUrl(base),
     }
   })()
 
@@ -146,6 +147,13 @@ export default function AlumniDashboard() {
   const [myFundTransactions, setMyFundTransactions] = useState([])
   const [fundSubmittingFor, setFundSubmittingFor] = useState(null)
   const [fundFormByRequest, setFundFormByRequest] = useState({})
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
+
+  const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
+
+  useEffect(() => {
+    setAvatarLoadFailed(false)
+  }, [profileAvatarUrl])
 
   // Notifications
   const [notifOpen, setNotifOpen] = useState(false)
@@ -547,8 +555,8 @@ export default function AlumniDashboard() {
                 </div>
               )}
             </div>
-            {profile.photo_url
-              ? <img src={profile.photo_url} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} />
+            {(profileAvatarUrl && !avatarLoadFailed)
+              ? <img src={profileAvatarUrl} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
               : <div className="ad-topbar-avatar">{profile.name[0]}</div>
             }
             <div className="ad-topbar-info">
@@ -635,8 +643,8 @@ export default function AlumniDashboard() {
                 <i className="fa-solid fa-user" style={{color:'#00a3a3'}}></i> Quick Profile
               </div>
               <div className="ad-profile-card">
-                {profile.photo_url
-                  ? <img src={profile.photo_url} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} />
+                {(profileAvatarUrl && !avatarLoadFailed)
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
                   : <div className="ad-profile-avatar">{profile.name[0]}</div>
                 }
                 <div className="ad-profile-details">
@@ -780,8 +788,8 @@ export default function AlumniDashboard() {
                         fontSize:18,fontWeight:800,color:'white',
                         boxShadow:'0 3px 10px rgba(95,44,130,0.22)',
                       }}>
-                        {a.photo
-                          ? <img src={getUploadUrl(a.photo)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                        {resolveAvatarUrl(a)
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -925,8 +933,8 @@ export default function AlumniDashboard() {
                         fontSize:18,fontWeight:800,color:'white',
                         boxShadow:'0 3px 10px rgba(26,110,181,0.22)',
                       }}>
-                        {a.photo
-                          ? <img src={getUploadUrl(a.photo)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                        {resolveAvatarUrl(a)
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -983,8 +991,8 @@ export default function AlumniDashboard() {
                 <i className="fa-solid fa-user-circle" style={{color:'#00a3a3'}}></i> My Profile
               </div>
               <div className="ad-profile-card big">
-                {profile.photo_url
-                  ? <img src={profile.photo_url} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} />
+                {(profileAvatarUrl && !avatarLoadFailed)
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
                   : <div className="ad-profile-avatar large">{profile.name[0]}</div>
                 }
                 {!editMode ? (
@@ -1677,8 +1685,8 @@ export default function AlumniDashboard() {
                 fontSize:36,fontWeight:800,color:'white',
                 marginTop:-48,overflow:'hidden',boxShadow:'0 6px 24px rgba(95,44,130,0.25)',
               }}>
-                {selectedAlumni.photo
-                  ? <img src={getUploadUrl(selectedAlumni.photo)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                {resolveAvatarUrl(selectedAlumni)
+                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
                   : selectedAlumni.name[0].toUpperCase()
                 }
               </div>
