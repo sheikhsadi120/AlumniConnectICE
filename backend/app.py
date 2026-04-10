@@ -46,6 +46,7 @@ CORS(
 )
 
 _db_ready = False
+_db_init_attempted = False  # Prevent retry loops on failed initialization
 _db_ready_lock = Lock()
 
 
@@ -152,21 +153,27 @@ def ensure_db_migrations():
     conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT 1
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA=%s AND TABLE_NAME='alumni' AND COLUMN_NAME='current_job_start_date'
-            LIMIT 1
-            """,
-            (config.MYSQL_DB,),
-        )
-        if not cur.fetchone():
+        
+        # Quick check: if alumni table doesn't exist, abort migrations
+        # (schema.sql hasn't been applied yet)
+        try:
+            cur.execute("SELECT 1 FROM alumni LIMIT 1")
+        except pymysql_err.ProgrammingError as e:
+            if e.args[0] == 1146:  # Table doesn't exist
+                print("[DB MIGRATION] Skipped: alumni table not found (schema.sql not yet applied)")
+                return
+            raise
+        
+        # Attempt to add current_job_start_date column if missing
+        try:
             cur.execute("ALTER TABLE alumni ADD COLUMN current_job_start_date DATE DEFAULT NULL")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:  # Column already exists
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
 
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS past_job_experiences (
+        # Create optional helper tables 
+        create_stmts = [
+            """CREATE TABLE IF NOT EXISTS past_job_experiences (
                 id          INT AUTO_INCREMENT PRIMARY KEY,
                 alumni_id   INT NOT NULL,
                 company     VARCHAR(150) DEFAULT NULL,
@@ -175,13 +182,8 @@ def ensure_db_migrations():
                 end_date    DATE DEFAULT NULL,
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE
-            )
-            """
-        )
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS email_logs (
+            )""",
+            """CREATE TABLE IF NOT EXISTS email_logs (
                 id              INT AUTO_INCREMENT PRIMARY KEY,
                 subject         VARCHAR(255) NOT NULL,
                 recipient_count INT NOT NULL DEFAULT 0,
@@ -190,26 +192,16 @@ def ensure_db_migrations():
                 status          VARCHAR(20) NOT NULL,
                 error_message   TEXT DEFAULT NULL,
                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS existing_lists (
+            )""",
+            """CREATE TABLE IF NOT EXISTS existing_lists (
                 id              INT AUTO_INCREMENT PRIMARY KEY,
                 title           VARCHAR(255) NOT NULL,
                 file_name       VARCHAR(255) NOT NULL,
                 stored_path     VARCHAR(500) NOT NULL,
                 uploaded_by     VARCHAR(100) DEFAULT 'admin',
                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS fund_requests (
+            )""",
+            """CREATE TABLE IF NOT EXISTS fund_requests (
                 id                   INT AUTO_INCREMENT PRIMARY KEY,
                 title                VARCHAR(200) NOT NULL,
                 purpose              TEXT NOT NULL,
@@ -222,13 +214,8 @@ def ensure_db_migrations():
                 status               ENUM('open','closed') DEFAULT 'open',
                 created_by           VARCHAR(100) DEFAULT 'admin',
                 created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS password_reset_otps (
+            )""",
+            """CREATE TABLE IF NOT EXISTS password_reset_otps (
                 id          INT AUTO_INCREMENT PRIMARY KEY,
                 alumni_id   INT NOT NULL,
                 email       VARCHAR(255) NOT NULL,
@@ -240,44 +227,33 @@ def ensure_db_migrations():
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE,
                 INDEX idx_password_reset_lookup (email, user_type, used, expires_at)
-            )
-            """
-        )
-
-        # Ensure fund_transactions has newer workflow columns.
-        fund_tx_columns = [
-            ('request_id', "ALTER TABLE fund_transactions ADD COLUMN request_id INT DEFAULT NULL"),
-            ('alumni_id', "ALTER TABLE fund_transactions ADD COLUMN alumni_id INT DEFAULT NULL"),
-            ('payment_method', "ALTER TABLE fund_transactions ADD COLUMN payment_method VARCHAR(30) DEFAULT NULL"),
-            ('payment_reference', "ALTER TABLE fund_transactions ADD COLUMN payment_reference VARCHAR(120) DEFAULT NULL"),
-            ('created_by_role', "ALTER TABLE fund_transactions ADD COLUMN created_by_role ENUM('admin','alumni') DEFAULT 'alumni'"),
-            ('status', "ALTER TABLE fund_transactions ADD COLUMN status ENUM('pending','paid','rejected') DEFAULT 'paid'"),
+            )""",
         ]
-        for column_name, alter_sql in fund_tx_columns:
-            cur.execute(
-                """
-                SELECT 1
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA=%s AND TABLE_NAME='fund_transactions' AND COLUMN_NAME=%s
-                LIMIT 1
-                """,
-                (config.MYSQL_DB, column_name),
-            )
-            if not cur.fetchone():
-                cur.execute(alter_sql)
+        
+        for stmt in create_stmts:
+            try:
+                cur.execute(stmt)
+            except Exception as e:
+                print(f"[DB MIGRATION] CREATE TABLE warning (non-fatal): {e}")
 
-        # Add is_manually_added column if it doesn't exist
-        cur.execute(
-            """
-            SELECT 1
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA=%s AND TABLE_NAME='alumni' AND COLUMN_NAME='is_manually_added'
-            LIMIT 1
-            """,
-            (config.MYSQL_DB,),
-        )
-        if not cur.fetchone():
+        # Attempt to add fund_transactions columns if missing
+        fund_tx_columns = [
+            'request_id', 'alumni_id', 'payment_method', 'payment_reference', 
+            'created_by_role', 'status'
+        ]
+        for col in fund_tx_columns:
+            try:
+                cur.execute(f"ALTER TABLE fund_transactions ADD COLUMN {col} VARCHAR(100) DEFAULT NULL")
+            except pymysql_err.OperationalError as e:
+                if e.args[0] != 1060:  # Column already exists is OK
+                    print(f"[DB MIGRATION] ALTER TABLE note (non-fatal): {e}")
+
+        # Add is_manually_added to alumni if missing  
+        try:
             cur.execute("ALTER TABLE alumni ADD COLUMN is_manually_added TINYINT DEFAULT 0")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:  # Column already exists is OK
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
 
         cur.close()
     finally:
@@ -302,15 +278,18 @@ def ensure_runtime_db_ready():
 
     This helps recover from transient startup ordering issues where DB was not
     reachable during initial boot but becomes reachable later.
+    
+    CRITICAL: Set _db_init_attempted regardless of success to prevent infinite retries.
     """
-    global _db_ready
-    if _db_ready:
+    global _db_ready, _db_init_attempted
+    if _db_ready or _db_init_attempted:
         return
 
     with _db_ready_lock:
-        if _db_ready:
+        if _db_ready or _db_init_attempted:
             return
 
+        _db_init_attempted = True  # Mark attempt BEFORE trying, so failures don't retry
         try:
             # On Render, attempt bootstrap even if env value is stale.
             if config.AUTO_INIT_DB or os.getenv('RENDER'):
@@ -318,7 +297,9 @@ def ensure_runtime_db_ready():
             ensure_db_migrations()
             _db_ready = True
         except Exception as e:
-            print(f"[DB RUNTIME INIT] Deferred due to error: {e}")
+            print(f"[DB RUNTIME INIT] ERROR (won't retry): {e}")
+            import traceback
+            traceback.print_exc()  # Print full stack trace for debugging
 
 
 def build_upload_url(filename):
