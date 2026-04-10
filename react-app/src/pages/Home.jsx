@@ -31,13 +31,13 @@ function Home() {
                   <Dropdown.Menu style={{ borderRadius: 12, boxShadow: '0 8px 24px rgba(95,44,130,0.18)', minWidth: 180, overflow: 'hidden', border: 'none' }}>
                     <Dropdown.Item
                       onClick={() => { setShowDropdown(false); navigate('/student-login') }}
-                      style={{ fontWeight: 600, color: '#1565c0', fontSize: 14 }}
+                      style={{ fontWeight: 600, color: '#f8f5ff', fontSize: 14 }}
                     >
                       🎓 Student Login
                     </Dropdown.Item>
                     <Dropdown.Item
                       onClick={() => { setShowDropdown(false); navigate('/alumni-login') }}
-                      style={{ fontWeight: 600, color: '#5f2c82', fontSize: 14 }}
+                      style={{ fontWeight: 600, color: '#f8f5ff', fontSize: 14 }}
                     >
                       👤 Alumni Login
                     </Dropdown.Item>
