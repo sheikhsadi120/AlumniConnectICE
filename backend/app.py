@@ -23,6 +23,7 @@ import random
 from threading import Lock
 from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
+import re
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -37,10 +38,30 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Avoid browser "Failed to fetch" from CORS misconfiguration.
 # If origins is wildcard, do not enable credentials (invalid in CORS).
+def _expanded_cors_origins(origins):
+    expanded = []
+    for origin in origins:
+        value = (origin or '').strip().rstrip('/')
+        if not value:
+            continue
+
+        expanded.append(value)
+
+        # Render preview deployments often append a short suffix to service hosts
+        # (for example: alumniconnect-web-e8b6.onrender.com).
+        m = re.match(r"^https://([a-z0-9-]+(?:-(?:web|frontend|front|fe|client|ui)))\.onrender\.com$", value, re.IGNORECASE)
+        if m:
+            host_base = m.group(1)
+            expanded.append(rf"^https://{re.escape(host_base)}(?:-[a-z0-9]+)?\.onrender\.com$")
+
+    return expanded
+
+
 _allow_all_origins = '*' in config.CORS_ORIGINS
+_cors_origins = '*' if _allow_all_origins else _expanded_cors_origins(config.CORS_ORIGINS)
 CORS(
     app,
-    resources={r"/api/*": {"origins": '*' if _allow_all_origins else config.CORS_ORIGINS}},
+    resources={r"/api/*": {"origins": _cors_origins}},
     supports_credentials=not _allow_all_origins,
     methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allow_headers=['Content-Type', 'Authorization'],

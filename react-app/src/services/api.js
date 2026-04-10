@@ -1,48 +1,129 @@
 // ─── Centralised API helper ───────────────────────────
-function inferRenderApiBaseUrl() {
-  if (typeof window === 'undefined') return null;
+const RENDER_DEFAULT_API_BASE = 'https://alumniconnect-api.onrender.com/api';
+
+const normalizeBaseUrl = (value) => {
+  if (!value) return null;
+  return String(value).trim().replace(/\/+$/, '');
+};
+
+function inferRenderApiBaseCandidates() {
+  if (typeof window === 'undefined') return [];
+
   const host = window.location.hostname || '';
-  const match = host.match(/^(.+)-web(?:-[a-z0-9]+)?\.onrender\.com$/i);
-  if (match) {
-    return `https://${match[1]}-api.onrender.com/api`;
+  const origin = window.location.origin || '';
+  const candidates = [];
+
+  // If frontend and backend are served from the same origin through a reverse proxy.
+  if (origin) {
+    candidates.push(`${origin}/api`);
   }
-  return null;
+
+  if (!/\.onrender\.com$/i.test(host)) {
+    return candidates;
+  }
+
+  const namedMatch = host.match(/^(.+?)-(web|frontend|front|fe|client|ui)(?:-([a-z0-9]+))?\.onrender\.com$/i);
+  if (namedMatch) {
+    const baseName = namedMatch[1];
+    const suffix = namedMatch[3];
+    if (suffix) {
+      candidates.push(`https://${baseName}-api-${suffix}.onrender.com/api`);
+    }
+    candidates.push(`https://${baseName}-api.onrender.com/api`);
+  }
+
+  const replaceSuffix = (suffixes) => {
+    for (const suffix of suffixes) {
+      if (host.endsWith(`${suffix}.onrender.com`)) {
+        const apiHost = host.replace(new RegExp(`${suffix}\\.onrender\\.com$`, 'i'), '-api.onrender.com');
+        candidates.push(`https://${apiHost}/api`);
+        return;
+      }
+    }
+  };
+
+  replaceSuffix(['-web', '-frontend', '-front', '-fe', '-client', '-ui']);
+
+  const parts = host.replace(/\.onrender\.com$/i, '').split('-').filter(Boolean);
+  if (parts.length > 1) {
+    const guessed = `${parts.slice(0, -1).join('-')}-api.onrender.com`;
+    candidates.push(`https://${guessed}/api`);
+  }
+
+  return candidates;
 }
 
-const inferredBase = inferRenderApiBaseUrl();
-const RENDER_DEFAULT_API_BASE = 'https://alumniconnect-api.onrender.com/api';
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || inferredBase || RENDER_DEFAULT_API_BASE || 'http://localhost:5000/api').replace(/\/+$/, '');
-const UPLOAD_BASE_URL = (import.meta.env.VITE_UPLOAD_BASE_URL || BASE_URL.replace(/\/api$/, '') + '/uploads').replace(/\/+$/, '');
+const envBase = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const inferredBases = inferRenderApiBaseCandidates().map(normalizeBaseUrl).filter(Boolean);
+
+const API_BASE_CANDIDATES = Array.from(
+  new Set([
+    envBase,
+    ...inferredBases,
+    normalizeBaseUrl(RENDER_DEFAULT_API_BASE),
+    normalizeBaseUrl('http://localhost:5000/api'),
+  ].filter(Boolean))
+);
+
+let activeBaseUrl = API_BASE_CANDIDATES[0];
+
+const getActiveUploadBaseUrl = () => {
+  const configured = normalizeBaseUrl(import.meta.env.VITE_UPLOAD_BASE_URL);
+  if (configured) return configured;
+  const apiBase = activeBaseUrl || API_BASE_CANDIDATES[0] || '';
+  return `${apiBase.replace(/\/api$/, '')}/uploads`.replace(/\/+$/, '');
+};
 
 export const getUploadUrl = (pathOrUrl) => {
   if (!pathOrUrl) return null;
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
-  return `${UPLOAD_BASE_URL}/${String(pathOrUrl).replace(/^\/+/, '')}`;
+  return `${getActiveUploadBaseUrl()}/${String(pathOrUrl).replace(/^\/+/, '')}`;
 };
 
 async function request(path, options = {}) {
-  try {
-    const hasBody = options.body !== undefined && options.body !== null;
+  const hasBody = options.body !== undefined && options.body !== null;
+  const bodyIsFormData = typeof FormData !== 'undefined' && hasBody && options.body instanceof FormData;
+
+  const getAttemptOrder = () => {
+    const ordered = [];
+    if (activeBaseUrl) ordered.push(activeBaseUrl);
+    for (const candidate of API_BASE_CANDIDATES) {
+      if (!ordered.includes(candidate)) ordered.push(candidate);
+    }
+    return ordered;
+  };
+
+  const baseAttempts = getAttemptOrder();
+  let lastNetworkError = null;
+
+  for (const baseUrl of baseAttempts) {
     const headers = { ...(options.headers || {}) };
-    if (hasBody && !Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+    if (hasBody && !bodyIsFormData && !Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(`${BASE_URL}${path}`, {
-      headers,
-      ...options,
-    });
-    let data = {};
     try {
-      data = await res.json();
-    } catch (_) {
-      data = { success: false, message: `Server error (HTTP ${res.status})` };
+      const res = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers,
+      });
+      activeBaseUrl = baseUrl;
+
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = { success: false, message: `Server error (HTTP ${res.status})` };
+      }
+      return { ok: res.ok, status: res.status, data };
+    } catch (error) {
+      lastNetworkError = error;
+      console.warn(`Request failed via ${baseUrl}${path}:`, error);
     }
-    return { ok: res.ok, status: res.status, data };
-  } catch (error) {
-    console.error('Request failed:', error);
-    throw new Error(`Failed to fetch ${BASE_URL}${path}: ${error.message}`);
   }
+
+  const attempted = baseAttempts.join(', ');
+  throw new Error(`Failed to fetch ${path}. Attempted API bases: ${attempted}. Last error: ${lastNetworkError?.message || 'Unknown network error'}`);
 }
 
 // ── Auth ──────────────────────────────────────────────
@@ -55,12 +136,7 @@ export const resetPasswordWithOtp = (email, user_type, otp, new_password) =>
   request('/forgot-password/reset', { method:'POST', body: JSON.stringify({ email, user_type, otp, new_password }) });
 export const register    = (formData) => {
   // formData is a FormData object (contains file)
-  return fetch(`${BASE_URL}/register`, { method: 'POST', body: formData })
-    .then(async res => {
-      let data = {};
-      try { data = await res.json(); } catch (_) { data = { success: false, message: `Server error (HTTP ${res.status})` }; }
-      return { ok: res.ok, status: res.status, data };
-    });
+  return request('/register', { method: 'POST', body: formData });
 };
 
 // ── Alumni ────────────────────────────────────────────
@@ -76,12 +152,7 @@ export const getPending      = ()        => request('/pending');
 export const requestUpgrade = (id, payload) => {
   // payload can be JSON-friendly object or FormData when document upload is included.
   if (payload instanceof FormData) {
-    return fetch(`${BASE_URL}/request-upgrade/${id}`, { method: 'POST', body: payload })
-      .then(async res => {
-        let data = {};
-        try { data = await res.json(); } catch (_) { data = { success: false, message: `Server error (HTTP ${res.status})` }; }
-        return { ok: res.ok, status: res.status, data };
-      });
+    return request(`/request-upgrade/${id}`, { method: 'POST', body: payload });
   }
   return request(`/request-upgrade/${id}`, { method:'POST', body: JSON.stringify(payload || {}) });
 };
@@ -141,12 +212,7 @@ export const deleteJob         = (id)  => request(`/jobs/${id}`,              { 
 // ── Existing Lists (Admin Excel Repository) ──────────
 export const getExistingLists = () => request('/existing-lists');
 export const uploadExistingList = (formData) => {
-  return fetch(`${BASE_URL}/existing-lists`, { method: 'POST', body: formData })
-    .then(async res => {
-      let data = {};
-      try { data = await res.json(); } catch (_) { data = { success: false, message: `Server error (HTTP ${res.status})` }; }
-      return { ok: res.ok, status: res.status, data };
-    });
+  return request('/existing-lists', { method: 'POST', body: formData });
 };
 export const deleteExistingList = (id) => request(`/existing-lists/${id}`, { method: 'DELETE' });
 export const getExistingListData = (id) => request(`/existing-lists/${id}/data`);

@@ -1,5 +1,5 @@
 import os
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 
 
 def _load_dotenv_file(path):
@@ -64,12 +64,33 @@ def _parse_mysql_url(url):
 	parsed = urlparse(url)
 	if parsed.scheme not in {'mysql', 'mysql+pymysql'}:
 		return {}
+	query = parse_qs(parsed.query or '')
+
+	ssl_mode = None
+	for key in ('ssl-mode', 'ssl_mode', 'sslmode'):
+		if query.get(key):
+			ssl_mode = str(query[key][0]).strip().lower()
+			break
+
+	if ssl_mode is None and query.get('ssl'):
+		raw_ssl = str(query['ssl'][0]).strip().lower()
+		if raw_ssl in {'1', 'true', 'yes', 'required'}:
+			ssl_mode = 'required'
+
+	ssl_ca = None
+	for key in ('ssl-ca', 'ssl_ca', 'sslca'):
+		if query.get(key):
+			ssl_ca = str(query[key][0]).strip()
+			break
+
 	return {
 		'host': parsed.hostname,
 		'port': parsed.port,
 		'user': unquote(parsed.username) if parsed.username else None,
 		'password': unquote(parsed.password) if parsed.password else None,
 		'database': parsed.path.lstrip('/') if parsed.path else None,
+		'ssl_mode': ssl_mode,
+		'ssl_ca': ssl_ca,
 	}
 
 
@@ -116,6 +137,10 @@ if _parsed_mysql:
 	MYSQL_PASSWORD = _parsed_mysql.get('password') if _parsed_mysql.get('password') is not None else MYSQL_PASSWORD
 	MYSQL_DB = _parsed_mysql.get('database') or MYSQL_DB
 	MYSQL_PORT = _parsed_mysql.get('port') or MYSQL_PORT
+	if not MYSQL_SSL_MODE:
+		MYSQL_SSL_MODE = _parsed_mysql.get('ssl_mode') or MYSQL_SSL_MODE
+	if not MYSQL_SSL_CA:
+		MYSQL_SSL_CA = _parsed_mysql.get('ssl_ca') or MYSQL_SSL_CA
 
 # Auto-create database/tables from schema.sql on startup
 AUTO_INIT_DB = _as_bool(os.getenv('AUTO_INIT_DB'), True)
