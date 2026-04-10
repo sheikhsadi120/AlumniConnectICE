@@ -103,6 +103,9 @@ MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or 'root'
 MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or ''
 MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or 'alumniconnect'
 MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT'), 3307)
+MYSQL_SSL_MODE = (os.getenv('MYSQL_SSL_MODE') or '').strip().lower()
+MYSQL_SSL_CA = (os.getenv('MYSQL_SSL_CA') or '').strip()
+MYSQL_CONNECT_TIMEOUT = _as_int(os.getenv('MYSQL_CONNECT_TIMEOUT'), 10)
 
 _parsed_mysql = _parse_mysql_url(MYSQL_URL)
 if _parsed_mysql:

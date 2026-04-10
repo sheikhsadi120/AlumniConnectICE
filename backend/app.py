@@ -35,6 +35,46 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 CORS(app, resources={r"/api/*": {"origins": config.CORS_ORIGINS}}, supports_credentials=True)
 
 
+def _mysql_ssl_kwargs():
+    mode = (config.MYSQL_SSL_MODE or '').strip().lower()
+    if not mode or mode == 'disable':
+        return None
+
+    if mode in {'required', 'verify_ca', 'verify_identity'}:
+        ssl_kwargs = {}
+        if config.MYSQL_SSL_CA:
+            ssl_kwargs['ca'] = config.MYSQL_SSL_CA
+        if mode == 'verify_identity':
+            ssl_kwargs['check_hostname'] = True
+        elif mode == 'verify_ca':
+            ssl_kwargs['check_hostname'] = False
+        return ssl_kwargs
+
+    return None
+
+
+def _mysql_connect_kwargs(include_database=False, dict_cursor=False, autocommit=False):
+    kwargs = {
+        'host': config.MYSQL_HOST,
+        'user': config.MYSQL_USER,
+        'password': config.MYSQL_PASSWORD,
+        'port': config.MYSQL_PORT,
+        'charset': 'utf8mb4',
+        'connect_timeout': config.MYSQL_CONNECT_TIMEOUT,
+        'autocommit': autocommit,
+    }
+    if include_database:
+        kwargs['database'] = config.MYSQL_DB
+    if dict_cursor:
+        kwargs['cursorclass'] = pymysql.cursors.DictCursor
+
+    ssl_kwargs = _mysql_ssl_kwargs()
+    if ssl_kwargs is not None:
+        kwargs['ssl'] = ssl_kwargs
+
+    return kwargs
+
+
 def init_db_tables_from_schema():
     """Ensure DB and tables exist by executing schema.sql (safe with IF NOT EXISTS/INSERT IGNORE)."""
     schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
@@ -64,14 +104,7 @@ def init_db_tables_from_schema():
             continue
         statements.append(stmt)
 
-    bootstrap_conn = pymysql.connect(
-        host=config.MYSQL_HOST,
-        user=config.MYSQL_USER,
-        password=config.MYSQL_PASSWORD,
-        port=config.MYSQL_PORT,
-        charset='utf8mb4',
-        autocommit=True,
-    )
+    bootstrap_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=False, autocommit=True))
 
     try:
         cur = bootstrap_conn.cursor()
@@ -86,15 +119,7 @@ def init_db_tables_from_schema():
 
 def ensure_db_migrations():
     """Apply small safe migrations for already-existing databases."""
-    conn = pymysql.connect(
-        host=config.MYSQL_HOST,
-        user=config.MYSQL_USER,
-        password=config.MYSQL_PASSWORD,
-        database=config.MYSQL_DB,
-        port=config.MYSQL_PORT,
-        charset='utf8mb4',
-        autocommit=True,
-    )
+    conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
     try:
         cur = conn.cursor()
         cur.execute(
@@ -448,6 +473,16 @@ def handle_exception(e):
                 'success': False,
                 'message': 'Database authentication failed. Set MYSQL_USER and MYSQL_PASSWORD in backend/.env, then restart backend.'
             }), 503
+        if code in {2003, 2005}:
+            return jsonify({
+                'success': False,
+                'message': 'Database unreachable. Verify MYSQL_HOST, MYSQL_PORT, and network allowlist in your DB provider.'
+            }), 503
+        if code == 2026:
+            return jsonify({
+                'success': False,
+                'message': 'Database SSL error. For Aiven set MYSQL_SSL_MODE=required and configure MYSQL_SSL_CA if needed.'
+            }), 503
 
     if config.DEBUG:
         import traceback
@@ -462,15 +497,7 @@ def not_found(e):
 def get_db():
     """Return a per-request cached DB connection (auto-closed at request teardown)."""
     if 'db' not in g:
-        g.db = pymysql.connect(
-            host=config.MYSQL_HOST,
-            user=config.MYSQL_USER,
-            password=config.MYSQL_PASSWORD,
-            database=config.MYSQL_DB,
-            port=config.MYSQL_PORT,
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=False,
-        )
+        g.db = pymysql.connect(**_mysql_connect_kwargs(include_database=True, dict_cursor=True, autocommit=False))
     return g.db
 
 @app.teardown_appcontext

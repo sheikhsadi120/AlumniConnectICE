@@ -31,8 +31,14 @@ services:
         sync: false
       - key: MYSQL_DB
         sync: false
+      - key: MYSQL_SSL_MODE
+        value: required
+      - key: MYSQL_SSL_CA
+        sync: false
+      - key: MYSQL_CONNECT_TIMEOUT
+        value: "10"
       - key: AUTO_INIT_DB
-        value: "true"
+        value: "false"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
