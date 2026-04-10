@@ -277,6 +277,25 @@ def ensure_db_migrations():
             if e.args[0] != 1060:  # Column already exists is OK
                 print(f"[DB MIGRATION] Note (non-fatal): {e}")
 
+        try:
+            cur.execute("ALTER TABLE alumni ADD COLUMN address VARCHAR(255) DEFAULT NULL")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
+
+        try:
+            cur.execute("ALTER TABLE alumni ADD COLUMN higher_study VARCHAR(255) DEFAULT NULL")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
+
+        # Add optional event time column if missing
+        try:
+            cur.execute("ALTER TABLE events ADD COLUMN event_time TIME DEFAULT NULL")
+        except pymysql_err.OperationalError as e:
+            if e.args[0] != 1060:  # Column already exists is OK
+                print(f"[DB MIGRATION] Note (non-fatal): {e}")
+
         cur.close()
     finally:
         conn.close()
@@ -889,16 +908,65 @@ def register():
             idcard_filename = f"{uuid.uuid4().hex}_{safe_name}"
             idcard_file.save(os.path.join(UPLOAD_FOLDER, idcard_filename))
 
+    email = (data.get('email') or '').strip()
     hashed = generate_password_hash(data['password'])
     user_type = data.get('user_type', 'alumni')
     conn = get_db()
     cur = conn.cursor()
     try:
+        # If this email already exists in admin's "Existing Alumni" list,
+        # reuse that row as the user's real registration and move it to pending review.
+        cur.execute(
+            "SELECT id, is_manually_added FROM alumni WHERE LOWER(email)=LOWER(%s) LIMIT 1",
+            (email,)
+        )
+        existing = cur.fetchone()
+        if existing and int(existing.get('is_manually_added') or 0) == 1:
+            cur.execute(
+                """
+                UPDATE alumni
+                   SET name=%s,
+                       email=%s,
+                       phone=%s,
+                       department=%s,
+                       student_id=%s,
+                       session=%s,
+                       graduation_year=%s,
+                       company=%s,
+                       designation=%s,
+                       password=%s,
+                       photo=CASE WHEN %s IS NULL THEN photo ELSE %s END,
+                       id_photo=CASE WHEN %s IS NULL THEN id_photo ELSE %s END,
+                       status='pending',
+                       user_type=%s,
+                       upgrade_request=NULL,
+                       upgrade_document=NULL
+                 WHERE id=%s
+                """,
+                (
+                    data.get('name'), email, data.get('phone'),
+                    data.get('department', 'ICE'), data.get('student_id'),
+                    data.get('session'), data.get('graduation_year'),
+                    data.get('company'), data.get('designation'),
+                    hashed,
+                    photo_filename, photo_filename,
+                    idcard_filename, idcard_filename,
+                    user_type,
+                    existing['id'],
+                )
+            )
+            conn.commit()
+            return jsonify({
+                'success': True,
+                'id': existing['id'],
+                'message': 'Registration submitted. Waiting for admin approval.'
+            }), 201
+
         cur.execute(
             """INSERT INTO alumni (name, email, phone, department, student_id, session,
                                   graduation_year, company, designation, password, photo, id_photo, status, user_type)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)""",
-            (data.get('name'), data.get('email'), data.get('phone'),
+            (data.get('name'), email, data.get('phone'),
              data.get('department', 'ICE'), data.get('student_id'),
              data.get('session'), data.get('graduation_year'),
              data.get('company'), data.get('designation'),
@@ -937,7 +1005,7 @@ def get_pending():
 def get_alumni():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id,name,email,phone,department,student_id,session,graduation_year,company,designation,current_job_start_date,photo,bio,research_interests,extracurricular,linkedin,github,twitter,website,status,created_at FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0) ORDER BY name")
+    cur.execute("SELECT id,name,email,phone,address,department,student_id,session,graduation_year,company,designation,current_job_start_date,higher_study,photo,bio,research_interests,extracurricular,linkedin,github,twitter,website,status,created_at FROM alumni WHERE status='approved' AND (user_type IS NULL OR user_type='alumni') AND (is_manually_added IS NULL OR is_manually_added=0) ORDER BY name")
     rows = cur.fetchall()
 
     cur.execute(
@@ -974,7 +1042,7 @@ def get_alumni():
 def get_students():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id,name,email,phone,department,student_id,session,photo,status,created_at FROM alumni WHERE status='approved' AND user_type='student' ORDER BY name")
+    cur.execute("SELECT id,name,email,phone,address,department,student_id,session,company,designation,current_job_start_date,higher_study,bio,research_interests,extracurricular,linkedin,github,twitter,website,photo,status,created_at FROM alumni WHERE status='approved' AND user_type='student' ORDER BY name")
     rows = cur.fetchall()
     cur.close()
     for r in rows:
@@ -985,7 +1053,7 @@ def get_students():
 @app.route('/api/alumni/<int:aid>', methods=['PUT'])
 def update_alumni(aid):
     data = request.get_json() or {}
-    fields = ['name','phone','company','designation','current_job_start_date','session','bio','research_interests','extracurricular','linkedin','github','twitter','website']
+    fields = ['name','phone','address','company','designation','current_job_start_date','higher_study','session','bio','research_interests','extracurricular','linkedin','github','twitter','website']
     update_fields = [f for f in fields if f in data]
     has_past_jobs = 'past_jobs' in data
 
@@ -1081,7 +1149,8 @@ def approve(aid):
     cur = conn.cursor()
     cur.execute("SELECT name, email, user_type FROM alumni WHERE id=%s", (aid,))
     person = cur.fetchone()
-    cur.execute("UPDATE alumni SET status='approved' WHERE id=%s", (aid,))
+    # On approval, clear manual flag so user leaves Existing Alumni list and appears in All Alumni.
+    cur.execute("UPDATE alumni SET status='approved', is_manually_added=0 WHERE id=%s", (aid,))
     conn.commit()
     cur.close()
 
@@ -1212,13 +1281,15 @@ def reject_upgrade(aid):
 def get_events():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM events ORDER BY date DESC")
+    cur.execute("SELECT * FROM events ORDER BY created_at DESC, id DESC")
     rows = cur.fetchall()
     cur.close()
     # stringify dates
     for r in rows:
         if r.get('date'):
             r['date'] = str(r['date'])
+        if r.get('event_time') and not r.get('time'):
+            r['time'] = str(r['event_time'])
         if r.get('created_at'):
             r['created_at'] = str(r['created_at'])
     return jsonify(rows)
@@ -1229,11 +1300,21 @@ def add_event():
     data = request.get_json()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO events (title, date, location, description, fee, payment_account, audience) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-        (data.get('title'), data.get('date'), data.get('location'), data.get('description'),
-         data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'))
-    )
+    try:
+        cur.execute(
+            "INSERT INTO events (title, date, event_time, location, description, fee, payment_account, audience) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (data.get('title'), data.get('date'), data.get('time') or None, data.get('location'), data.get('description'),
+             data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'))
+        )
+    except pymysql_err.OperationalError as e:
+        if e.args and e.args[0] == 1054:  # Unknown column: keep compatibility with older schema
+            cur.execute(
+                "INSERT INTO events (title, date, location, description, fee, payment_account, audience) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (data.get('title'), data.get('date'), data.get('location'), data.get('description'),
+                 data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'))
+            )
+        else:
+            raise
     conn.commit()
     new_id = cur.lastrowid
 
@@ -1253,7 +1334,7 @@ def add_event():
         send_email(
             event_recipients,
             f"New Event Notice: {data.get('title', 'AlumniConnect Event')}",
-            f"A new event has been published.\n\nTitle: {data.get('title', '')}\nDate: {data.get('date', '')}\nLocation: {data.get('location', '')}\n\n{data.get('description', '')}",
+            f"A new event has been published.\n\nTitle: {data.get('title', '')}\nDate: {data.get('date', '')}\nTime: {data.get('time', '')}\nLocation: {data.get('location', '')}\n\n{data.get('description', '')}",
             'A new event has been announced for your community.',
             'View Event Details'
         )
@@ -1303,11 +1384,21 @@ def update_event(eid):
     data = request.get_json()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE events SET title=%s, date=%s, location=%s, description=%s, fee=%s, payment_account=%s, audience=%s WHERE id=%s",
-        (data.get('title'), data.get('date'), data.get('location'), data.get('description'),
-         data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'), eid)
-    )
+    try:
+        cur.execute(
+            "UPDATE events SET title=%s, date=%s, event_time=%s, location=%s, description=%s, fee=%s, payment_account=%s, audience=%s WHERE id=%s",
+            (data.get('title'), data.get('date'), data.get('time') or None, data.get('location'), data.get('description'),
+             data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'), eid)
+        )
+    except pymysql_err.OperationalError as e:
+        if e.args and e.args[0] == 1054:  # Unknown column
+            cur.execute(
+                "UPDATE events SET title=%s, date=%s, location=%s, description=%s, fee=%s, payment_account=%s, audience=%s WHERE id=%s",
+                (data.get('title'), data.get('date'), data.get('location'), data.get('description'),
+                 data.get('fee', 0) or 0, data.get('payment_account'), data.get('audience', 'both'), eid)
+            )
+        else:
+            raise
     conn.commit()
     cur.close()
     return jsonify({'success': True})

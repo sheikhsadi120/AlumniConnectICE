@@ -89,6 +89,10 @@
   border-left-color: #ffd6ff;
 }
 
+.ad-mobile-nav-toggle {
+  display: none;
+}
+
 .ad-sidebar-logout {
   margin: 0 14px 20px;
   background: rgba(255,80,80,0.15);
@@ -550,30 +554,70 @@ img.ad-profile-avatar {
     padding: 10px 12px;
   }
 
-  .ad-nav {
+  .ad-mobile-nav-toggle {
+    margin: 0 10px 10px;
+    width: calc(100% - 20px);
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(2px);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .ad-mobile-nav-toggle span {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 10px;
-    white-space: nowrap;
-    scrollbar-width: thin;
+  }
+
+  .ad-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 10px;
+    padding: 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.2s ease;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+  }
+
+  .ad-nav.mobile-open {
+    max-height: 540px;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 8px;
+    margin-bottom: 10px;
+    overflow-y: auto;
   }
 
   .ad-nav-btn {
-    width: auto;
-    min-width: max-content;
+    width: 100%;
+    min-width: 0;
     border-left: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: none;
     border-radius: 10px;
-    padding: 9px 12px;
-    background: rgba(255,255,255,0.06);
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.04);
   }
 
   .ad-nav-btn.active {
     border-left-color: transparent;
-    border-bottom-color: #ffd6ff;
+    border-bottom-color: transparent;
+    background: rgba(255,255,255,0.2);
   }
 
   .ad-sidebar-logout {

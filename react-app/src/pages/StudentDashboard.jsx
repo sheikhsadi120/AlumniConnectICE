@@ -43,6 +43,8 @@ export default function StudentDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
 
+  const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
+
   // Persist user info across refreshes using localStorage
   const alumniInfo = (() => {
     let base = null
@@ -136,12 +138,28 @@ export default function StudentDashboard() {
   const [upgradeMsg, setUpgradeMsg] = useState('')
   const [upgradeMsgKind, setUpgradeMsgKind] = useState('success')
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
+  const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
 
   useEffect(() => {
     setAvatarLoadFailed(false)
   }, [profileAvatarUrl])
+
+  useEffect(() => {
+    const onResize = () => setIsCompactDirectory(window.innerWidth <= 900)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth > 1024) setMobileMenuOpen(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   // Load events, trainings and alumni directory from API
   useEffect(() => {
@@ -166,7 +184,7 @@ export default function StudentDashboard() {
   }
 
   const notifications = useMemo(() => [
-    ...events.map(e   => ({ key: `event-${e.id}`,    id: e.id,   icon: 'fa-calendar-days',   color: '#5f2c82', label: 'Event',    title: e.title,                   meta: e.date    || '' })),
+    ...events.map(e   => ({ key: `event-${e.id}`,    id: e.id,   icon: 'fa-calendar-days',   color: '#5f2c82', label: 'Event',    title: e.title,                   meta: formatEventSchedule(e) || '' })),
     ...jobs.map(j     => ({ key: `job-${j.id}`,      id: j.id,   icon: 'fa-briefcase',        color: '#0066cc', label: 'Job',      title: `${j.title} — ${j.company}`, meta: j.deadline || '' })),
     ...trainings.map(t=> ({ key: `training-${t.id}`, id: t.id,   icon: 'fa-chalkboard-user',  color: '#22a06b', label: 'Training', title: t.title,                   meta: t.date    || '' })),
   ].sort((a, b) => b.id - a.id), [events, jobs, trainings])
@@ -213,8 +231,10 @@ export default function StudentDashboard() {
     if (alumniInfo.id) {
       await updateAlumni(alumniInfo.id, {
         phone:                editData.phone,
+        address:              editData.address,
         company:              editData.company,
         designation:          editData.designation,
+        higher_study:         editData.higher_study,
         bio:                  editData.bio,
         research_interests:   editData.research_interests,
         extracurricular:      editData.extracurricular,
@@ -389,12 +409,25 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        <nav className="ad-nav">
+        <button
+          className="ad-mobile-nav-toggle"
+          onClick={() => setMobileMenuOpen(v => !v)}
+          aria-expanded={mobileMenuOpen}
+          aria-label="Toggle menu"
+        >
+          <span><i className={`fa-solid ${mobileMenuOpen ? 'fa-xmark' : 'fa-bars'}`}></i> Menu</span>
+          <i className={`fa-solid ${mobileMenuOpen ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
+        </button>
+
+        <nav className={`ad-nav${mobileMenuOpen ? ' mobile-open' : ''}`}>
           {sidebarItems.map(item => (
             <button
               key={item.view}
               className={`ad-nav-btn${activeView === item.view ? ' active' : ''}`}
-              onClick={() => setActiveView(item.view)}
+              onClick={() => {
+                setActiveView(item.view)
+                setMobileMenuOpen(false)
+              }}
             >
               <i className={`fa-solid ${item.icon}`}></i>
               {item.label}
@@ -718,7 +751,7 @@ export default function StudentDashboard() {
               <div className="ad-events-grid">
                 {events.filter(ev => ev.audience !== 'alumni' && (!dashEventSearch.trim() || ev.title.toLowerCase().includes(dashEventSearch.trim().toLowerCase()))).slice().sort((a, b) => b.id - a.id).slice(0, dashEventSearch.trim() ? undefined : 2).map(ev => (
                   <div key={ev.id} className="ad-event-card">
-                    <div className="ad-event-date"><i className="fa-solid fa-calendar"></i> {ev.date}</div>
+                    <div className="ad-event-date"><i className="fa-solid fa-calendar"></i> {formatEventSchedule(ev)}</div>
                     <h4>{ev.title}</h4>
                     <p><i className="fa-solid fa-location-dot"></i> {ev.location}</p>
                     {ev.audience !== 'alumni' && (
@@ -749,7 +782,7 @@ export default function StudentDashboard() {
           {/* ══ ALUMNI DIRECTORY ══ */}
           {activeView === 'directory' && (() => {
             const filtered = allAlumni.filter(a => !alumniSearch || JSON.stringify(a).toLowerCase().includes(alumniSearch.toLowerCase()))
-            const cols = '44px 1fr 150px 1fr 110px'
+            const cols = isCompactDirectory ? '1fr' : '44px 1fr 150px 1fr 110px'
             return (
             <>
               {/* Header bar */}
@@ -783,13 +816,13 @@ export default function StudentDashboard() {
               <div style={{background:'white',borderRadius:18,overflow:'hidden',boxShadow:'0 4px 28px rgba(95,44,130,0.10)',border:'1px solid #ede8f8'}}>
 
                 {/* Head */}
-                <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
+                {!isCompactDirectory && <div style={{background:'linear-gradient(135deg,#5f2c82,#a4508b)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.5px',textAlign:'center'}}>#</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Alumni</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Batch / Session</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Contact</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px',textAlign:'center'}}>Action</span>
-                </div>
+                </div>}
 
                 {/* Empty state */}
                 {filtered.length === 0 && (
@@ -804,7 +837,7 @@ export default function StudentDashboard() {
                   <div key={a.id}
                     style={{
                       display:'grid',gridTemplateColumns:cols,gap:0,
-                      padding:'15px 24px',alignItems:'center',cursor:'pointer',
+                      padding:isCompactDirectory ? '16px' : '15px 24px',alignItems:isCompactDirectory ? 'stretch' : 'center',cursor:'pointer',
                       borderBottom: idx < filtered.length - 1 ? '1px solid #f4f0fb' : 'none',
                       background: idx % 2 === 0 ? '#fff' : '#fdfbff',
                       transition:'background 0.12s',
@@ -814,10 +847,10 @@ export default function StudentDashboard() {
                     onClick={() => setSelectedAlumni(a)}
                   >
                     {/* # */}
-                    <div style={{textAlign:'center',fontSize:12,fontWeight:600,color:'#d0c0e8'}}>{idx + 1}</div>
+                    <div style={{textAlign:isCompactDirectory ? 'left' : 'center',fontSize:12,fontWeight:600,color:'#d0c0e8',marginBottom:isCompactDirectory ? 8 : 0}}>#{idx + 1}</div>
 
                     {/* Alumni */}
-                    <div style={{display:'flex',alignItems:'center',gap:13,minWidth:0,paddingRight:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:13,minWidth:0,paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{
                         width:46,height:46,borderRadius:'50%',flexShrink:0,overflow:'hidden',
                         background:'linear-gradient(135deg,#a4508b,#5f2c82)',
@@ -840,7 +873,7 @@ export default function StudentDashboard() {
                     </div>
 
                     {/* Batch */}
-                    <div style={{paddingRight:12}}>
+                    <div style={{paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{display:'inline-flex',alignItems:'center',gap:5,background:'#f0eaff',borderRadius:8,padding:'4px 10px'}}>
                         <i className="fa-solid fa-graduation-cap" style={{color:'#7c3aed',fontSize:10}}></i>
                         <span style={{fontSize:12,fontWeight:700,color:'#5f2c82'}}>{a.department}</span>
@@ -849,7 +882,7 @@ export default function StudentDashboard() {
                     </div>
 
                     {/* Contact */}
-                    <div style={{paddingRight:12}}>
+                    <div style={{paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
                         <span style={{width:22,height:22,borderRadius:6,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                           <i className="fa-solid fa-envelope" style={{color:'#a4508b',fontSize:10}}></i>
@@ -865,7 +898,7 @@ export default function StudentDashboard() {
                     </div>
 
                     {/* Action */}
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:isCompactDirectory ? 'flex-start' : 'center',gap:7}}>
                       <span style={{background:'#e6f9ef',color:'#15803d',borderRadius:20,padding:'3px 11px',fontSize:11,fontWeight:700,letterSpacing:'0.2px'}}>
                         ✔ Active
                       </span>
@@ -885,7 +918,7 @@ export default function StudentDashboard() {
 
                 {/* Footer */}
                 {filtered.length > 0 && (
-                  <div style={{background:'#faf8ff',borderTop:'1px solid #ede8f8',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div style={{background:'#faf8ff',borderTop:'1px solid #ede8f8',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:isCompactDirectory ? 'wrap' : 'nowrap'}}>
                     <span style={{fontSize:12,color:'#aaa'}}>
                       Showing <strong style={{color:'#5f2c82'}}>{filtered.length}</strong> of <strong style={{color:'#5f2c82'}}>{allAlumni.length}</strong> alumni
                     </span>
@@ -898,7 +931,7 @@ export default function StudentDashboard() {
 
           {/* ══ PROFILE ══ */}
           {activeView === 'students-dir' && (() => {
-            const cols = '44px 1fr 150px 1fr 110px'
+            const cols = isCompactDirectory ? '1fr' : '44px 1fr 150px 1fr 110px'
             const filtered = allStudents.filter(a => !alumniSearch || JSON.stringify(a).toLowerCase().includes(alumniSearch.toLowerCase()))
             return (
             <>
@@ -932,13 +965,13 @@ export default function StudentDashboard() {
               {/* Table card */}
               <div style={{background:'white',borderRadius:18,overflow:'hidden',boxShadow:'0 4px 28px rgba(95,44,130,0.10)',border:'1px solid #ede8f8'}}>
                 {/* Head */}
-                <div style={{background:'linear-gradient(135deg,#1a6eb5,#4aa3e0)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
+                {!isCompactDirectory && <div style={{background:'linear-gradient(135deg,#1a6eb5,#4aa3e0)',display:'grid',gridTemplateColumns:cols,gap:0,padding:'13px 24px',alignItems:'center'}}>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.5px',textAlign:'center'}}>#</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Student</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Batch / Session</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px'}}>Contact</span>
                   <span style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',textTransform:'uppercase',letterSpacing:'0.6px',textAlign:'center'}}>Status</span>
-                </div>
+                </div>}
 
                 {/* Empty state */}
                 {filtered.length === 0 && (
@@ -953,7 +986,7 @@ export default function StudentDashboard() {
                   <div key={a.id}
                     style={{
                       display:'grid',gridTemplateColumns:cols,gap:0,
-                      padding:'15px 24px',alignItems:'center',
+                      padding:isCompactDirectory ? '16px' : '15px 24px',alignItems:isCompactDirectory ? 'stretch' : 'center',
                       borderBottom: idx < filtered.length - 1 ? '1px solid #f4f0fb' : 'none',
                       background: idx % 2 === 0 ? '#fff' : '#fdfbff',
                       transition:'background 0.12s',
@@ -961,8 +994,8 @@ export default function StudentDashboard() {
                     onMouseEnter={e => e.currentTarget.style.background='#f0f7ff'}
                     onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#fdfbff'}
                   >
-                    <div style={{textAlign:'center',fontSize:12,fontWeight:600,color:'#d0c0e8'}}>{idx + 1}</div>
-                    <div style={{display:'flex',alignItems:'center',gap:13,minWidth:0,paddingRight:12}}>
+                    <div style={{textAlign:isCompactDirectory ? 'left' : 'center',fontSize:12,fontWeight:600,color:'#d0c0e8',marginBottom:isCompactDirectory ? 8 : 0}}>#{idx + 1}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:13,minWidth:0,paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{
                         width:46,height:46,borderRadius:'50%',flexShrink:0,overflow:'hidden',
                         background:'linear-gradient(135deg,#1a6eb5,#4aa3e0)',
@@ -981,14 +1014,14 @@ export default function StudentDashboard() {
                         <div style={{fontSize:11,color:'#c8b8e0',marginTop:2}}>ID: {a.student_id || '—'}</div>
                       </div>
                     </div>
-                    <div style={{paddingRight:12}}>
+                    <div style={{paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{display:'inline-flex',alignItems:'center',gap:5,background:'#e0f0ff',borderRadius:8,padding:'4px 10px'}}>
                         <i className="fa-solid fa-graduation-cap" style={{color:'#1a6eb5',fontSize:10}}></i>
                         <span style={{fontSize:12,fontWeight:700,color:'#1a6eb5'}}>{a.department}</span>
                       </div>
                       <div style={{fontSize:12,color:'#888',marginTop:5,paddingLeft:1,fontWeight:500}}>{a.session}</div>
                     </div>
-                    <div style={{paddingRight:12}}>
+                    <div style={{paddingRight:isCompactDirectory ? 0 : 12,marginBottom:isCompactDirectory ? 10 : 0}}>
                       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
                         <span style={{width:22,height:22,borderRadius:6,background:'#e0f0ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                           <i className="fa-solid fa-envelope" style={{color:'#1a6eb5',fontSize:10}}></i>
@@ -1002,7 +1035,7 @@ export default function StudentDashboard() {
                         <span style={{fontSize:12,color:'#444'}}>{a.phone || '—'}</span>
                       </div>
                     </div>
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:isCompactDirectory ? 'flex-start' : 'center'}}>
                       <span style={{background:'#e6f9ef',color:'#15803d',borderRadius:20,padding:'3px 11px',fontSize:11,fontWeight:700,letterSpacing:'0.2px'}}>✔ Active</span>
                     </div>
                   </div>
@@ -1010,7 +1043,7 @@ export default function StudentDashboard() {
 
                 {/* Footer */}
                 {filtered.length > 0 && (
-                  <div style={{background:'#f5f9ff',borderTop:'1px solid #daeeff',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div style={{background:'#f5f9ff',borderTop:'1px solid #daeeff',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:isCompactDirectory ? 'wrap' : 'nowrap'}}>
                     <span style={{fontSize:12,color:'#aaa'}}>
                       Showing <strong style={{color:'#1a6eb5'}}>{filtered.length}</strong> of <strong style={{color:'#1a6eb5'}}>{allStudents.length}</strong> students
                     </span>
@@ -1039,10 +1072,12 @@ export default function StudentDashboard() {
                       <div className="ad-profile-row"><span>Student ID</span><strong>{profile.student_id || '—'}</strong></div>
                       <div className="ad-profile-row"><span>Email</span><strong>{profile.email}</strong></div>
                       <div className="ad-profile-row"><span>Phone</span><strong>{profile.phone}</strong></div>
+                      <div className="ad-profile-row"><span>Address</span><strong>{profile.address || '—'}</strong></div>
                       <div className="ad-profile-row"><span>Department</span><strong>{profile.department}</strong></div>
                       <div className="ad-profile-row"><span>Session</span><strong>{profile.session}</strong></div>
                       <div className="ad-profile-row"><span>Organization</span><strong>{profile.company}</strong></div>
                       <div className="ad-profile-row"><span>Designation</span><strong>{profile.designation}</strong></div>
+                      {profile.higher_study && <div className="ad-profile-row"><span>Higher Study</span><strong>{profile.higher_study}</strong></div>}
                       {profile.bio && <div className="ad-profile-row"><span>About Me</span><strong style={{whiteSpace:'pre-wrap'}}>{profile.bio}</strong></div>}
                       {profile.research_interests && <div className="ad-profile-row"><span>Research Interests</span><strong>{profile.research_interests}</strong></div>}
                       {profile.extracurricular && <div className="ad-profile-row"><span>Extracurricular</span><strong>{profile.extracurricular}</strong></div>}
@@ -1077,12 +1112,20 @@ export default function StudentDashboard() {
                       <input value={editData.phone} onChange={e => setEditData({...editData, phone: e.target.value})} />
                     </div>
                     <div className="ad-form-row">
+                      <label>Address</label>
+                      <input value={editData.address||''} onChange={e => setEditData({...editData, address: e.target.value})} placeholder="e.g. Rajshahi, Bangladesh" />
+                    </div>
+                    <div className="ad-form-row">
                       <label>Organization</label>
                       <input value={editData.company} onChange={e => setEditData({...editData, company: e.target.value})} />
                     </div>
                     <div className="ad-form-row">
                       <label>Designation</label>
                       <input value={editData.designation||''} onChange={e => setEditData({...editData, designation: e.target.value})} />
+                    </div>
+                    <div className="ad-form-row">
+                      <label>Higher Study</label>
+                      <input value={editData.higher_study||''} onChange={e => setEditData({...editData, higher_study: e.target.value})} placeholder="e.g. MSc in Data Science, University of X" />
                     </div>
                     <div className="ad-form-row">
                       <label>About Me</label>
@@ -1134,7 +1177,7 @@ export default function StudentDashboard() {
               <div className="ad-events-grid full">
                 {events.filter(ev => ev.audience !== 'alumni').slice().sort((a, b) => b.id - a.id).map(ev => (
                   <div key={ev.id} className="ad-event-card">
-                    <div className="ad-event-date"><i className="fa-solid fa-calendar"></i> {ev.date}</div>
+                    <div className="ad-event-date"><i className="fa-solid fa-calendar"></i> {formatEventSchedule(ev)}</div>
                     <h4>{ev.title}</h4>
                     <p className="ad-event-loc"><i className="fa-solid fa-location-dot"></i> {ev.location}</p>
                     <p className="ad-event-desc">{ev.description}</p>
@@ -1534,8 +1577,10 @@ export default function StudentDashboard() {
                 { icon:'fa-id-badge',       label:'Student ID',           value: selectedAlumni.student_id },
                 { icon:'fa-envelope',       label:'Email',                value: selectedAlumni.email },
                 { icon:'fa-phone',          label:'Phone',                value: selectedAlumni.phone },
+                { icon:'fa-location-dot',   label:'Address',              value: selectedAlumni.address },
                 { icon:'fa-building',       label:'Organization',         value: selectedAlumni.company },
                 { icon:'fa-briefcase',      label:'Designation',          value: selectedAlumni.designation },
+                { icon:'fa-user-graduate',  label:'Higher Study',         value: selectedAlumni.higher_study },
               ].filter(r => r.value).map((row, i) => (
                 <div key={i} style={{display:'flex',alignItems:'flex-start',gap:14,padding:'10px 0',borderBottom:'1px solid #f3eeff'}}>
                   <span style={{width:36,height:36,borderRadius:10,background:'#f3eeff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>

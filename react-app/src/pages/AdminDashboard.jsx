@@ -48,6 +48,8 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState('dashboard')
 
+  const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
+
   const [pending,      setPending]      = useState([])
   const [alumni,       setAlumni]       = useState([])
   const [students,     setStudents]     = useState([])
@@ -63,7 +65,7 @@ export default function AdminDashboard() {
   const [loading,      setLoading]      = useState(true)
 
   const [showModal,      setShowModal]      = useState(false)
-  const [newEvent,       setNewEvent]       = useState({ title:'', date:'', location:'', description:'', fee:'', payment_account:'', audience:'both' })
+  const [newEvent,       setNewEvent]       = useState({ title:'', date:'', time:'', location:'', description:'', fee:'', payment_account:'', audience:'both' })
   const [showEditModal,  setShowEditModal]  = useState(false)
   const [editingEvent,   setEditingEvent]   = useState(null)
   const [showAttendeesModal, setShowAttendeesModal] = useState(false)
@@ -228,9 +230,9 @@ export default function AdminDashboard() {
     e.preventDefault()
     const { ok, data } = await addEvent({ ...newEvent, fee: newEvent.fee ? Number(newEvent.fee) : 0 })
     if (ok) {
-      setEvents(prev => [...prev, { ...newEvent, id: data.id, fee: Number(newEvent.fee)||0 }])
+      setEvents(prev => [{ ...newEvent, id: data.id, fee: Number(newEvent.fee)||0 }, ...prev])
       setStats(s => ({ ...s, events: s.events + 1 }))
-      setNewEvent({ title:'', date:'', location:'', description:'', fee:'', payment_account:'', audience:'both' })
+      setNewEvent({ title:'', date:'', time:'', location:'', description:'', fee:'', payment_account:'', audience:'both' })
       setShowModal(false)
     }
   }
@@ -1647,7 +1649,7 @@ export default function AdminDashboard() {
                   {events.map(ev => (
                     <div className="event-card" key={ev.id}>
                       <h4><i className="fa-solid fa-star" style={{color:'#00a3a3',marginRight:6}}></i>{ev.title}</h4>
-                      <p><i className="fa-solid fa-calendar"></i> {ev.date}</p>
+                      <p><i className="fa-solid fa-calendar"></i> {formatEventSchedule(ev)}</p>
                       <p><i className="fa-solid fa-location-dot"></i> {ev.location}</p>
                       {ev.description && <p><i className="fa-solid fa-align-left"></i> {ev.description}</p>}
                       {Number(ev.fee) > 0 && <p><i className="fa-solid fa-bangladeshi-taka-sign"></i> Fee: ৳{Number(ev.fee).toLocaleString()}</p>}
@@ -1743,7 +1745,7 @@ export default function AdminDashboard() {
               Attendees — {attendeesEvent.title}
             </h3>
             <p style={{fontSize:13,color:'#888',marginBottom:16}}>
-              <i className="fa-solid fa-calendar" style={{marginRight:4}}></i>{attendeesEvent.date}
+              <i className="fa-solid fa-calendar" style={{marginRight:4}}></i>{formatEventSchedule(attendeesEvent)}
               &nbsp;·&nbsp;<i className="fa-solid fa-location-dot" style={{marginRight:4}}></i>{attendeesEvent.location}
             </p>
             {/* Search Bar */}
@@ -1891,6 +1893,8 @@ export default function AdminDashboard() {
               <input type="text" placeholder="e.g., Annual Alumni Reunion" value={newEvent.title} onChange={e=>setNewEvent({...newEvent,title:e.target.value})} required/>
               <label>Date</label>
               <input type="date" value={newEvent.date} onChange={e=>setNewEvent({...newEvent,date:e.target.value})} required/>
+              <label>Time</label>
+              <input type="time" value={newEvent.time} onChange={e=>setNewEvent({...newEvent,time:e.target.value})}/>
               <label>Location</label>
               <input type="text" placeholder="e.g., RU Auditorium" value={newEvent.location} onChange={e=>setNewEvent({...newEvent,location:e.target.value})} required/>
               <label>Description (optional)</label>
@@ -1923,6 +1927,8 @@ export default function AdminDashboard() {
               <input type="text" placeholder="e.g., Annual Alumni Reunion" value={editingEvent.title} onChange={e=>setEditingEvent({...editingEvent,title:e.target.value})} required/>
               <label>Date</label>
               <input type="date" value={editingEvent.date} onChange={e=>setEditingEvent({...editingEvent,date:e.target.value})} required/>
+              <label>Time</label>
+              <input type="time" value={editingEvent.time||''} onChange={e=>setEditingEvent({...editingEvent,time:e.target.value})}/>
               <label>Location</label>
               <input type="text" placeholder="e.g., RU Auditorium" value={editingEvent.location} onChange={e=>setEditingEvent({...editingEvent,location:e.target.value})} required/>
               <label>Description (optional)</label>
