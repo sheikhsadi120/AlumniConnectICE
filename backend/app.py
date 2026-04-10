@@ -32,7 +32,17 @@ app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB limit
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-CORS(app, resources={r"/api/*": {"origins": config.CORS_ORIGINS}}, supports_credentials=True)
+
+# Avoid browser "Failed to fetch" from CORS misconfiguration.
+# If origins is wildcard, do not enable credentials (invalid in CORS).
+_allow_all_origins = '*' in config.CORS_ORIGINS
+CORS(
+    app,
+    resources={r"/api/*": {"origins": '*' if _allow_all_origins else config.CORS_ORIGINS}},
+    supports_credentials=not _allow_all_origins,
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allow_headers=['Content-Type', 'Authorization'],
+)
 
 
 def _mysql_ssl_kwargs():
