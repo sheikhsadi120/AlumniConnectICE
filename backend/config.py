@@ -119,13 +119,19 @@ SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USERNAME
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'AlumniConnect Admin')
 
 # MySQL configuration
-MYSQL_URL = os.getenv('MYSQL_URL') or os.getenv('DATABASE_URL')
+MYSQL_URL = (
+	os.getenv('MYSQL_URL')
+	or os.getenv('DATABASE_URL')
+	or os.getenv('AIVEN_MYSQL_URL')
+	or os.getenv('AIVEN_SERVICE_URI')
+	or os.getenv('AIVEN_URI')
+)
 
-MYSQL_HOST = os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST') or '127.0.0.1'
-MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or 'root'
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or ''
-MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or 'alumniconnect'
-MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT'), 3307)
+MYSQL_HOST = os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST') or os.getenv('AIVEN_HOST') or '127.0.0.1'
+MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or os.getenv('AIVEN_USER') or 'root'
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or os.getenv('AIVEN_PASSWORD') or ''
+MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or os.getenv('AIVEN_DB') or os.getenv('AIVEN_DATABASE') or 'alumniconnect'
+MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT') or os.getenv('AIVEN_PORT'), 3307)
 MYSQL_SSL_MODE = (os.getenv('MYSQL_SSL_MODE') or '').strip().lower()
 MYSQL_SSL_CA = (os.getenv('MYSQL_SSL_CA') or '').strip()
 MYSQL_CONNECT_TIMEOUT = _as_int(os.getenv('MYSQL_CONNECT_TIMEOUT'), 10)
