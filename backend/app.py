@@ -18,6 +18,7 @@ from pymysql import err as pymysql_err
 import config
 import os
 import uuid
+import signal
 import random
 from threading import Lock
 from datetime import date, datetime, timedelta
@@ -2136,6 +2137,31 @@ def get_stats():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'success': True, 'message': 'ok'})
+
+
+@app.route('/api/version', methods=['GET'])
+def version():
+    """Diagnostic endpoint to check if latest code is deployed and DB status."""
+    db_status = 'unknown'
+    db_version = None
+    
+    try:
+        if _db_ready:
+            db_status = 'ready'
+        elif _db_init_attempted:
+            db_status = 'init_attempted_failed'
+        else:
+            db_status = 'not_attempted'
+    except Exception as e:
+        db_status = f'error: {str(e)[:50]}'
+    
+    return jsonify({
+        'success': True,
+        'code_version': '1b515e4',  # Updated after DB retry loop fix
+        'db_init_attempted': _db_init_attempted,
+        'db_ready': _db_ready,
+        'db_status': db_status,
+    })
 
 
 @app.route('/', methods=['GET'])
