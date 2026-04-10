@@ -1,5 +1,15 @@
 // ─── Centralised API helper ───────────────────────────
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/+$/, '');
+function inferRenderApiBaseUrl() {
+  if (typeof window === 'undefined') return null;
+  const host = window.location.hostname || '';
+  if (host.endsWith('.onrender.com') && host.includes('-web')) {
+    return `https://${host.replace('-web.onrender.com', '-api.onrender.com')}/api`;
+  }
+  return null;
+}
+
+const inferredBase = inferRenderApiBaseUrl();
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || inferredBase || 'http://localhost:5000/api').replace(/\/+$/, '');
 const UPLOAD_BASE_URL = (import.meta.env.VITE_UPLOAD_BASE_URL || BASE_URL.replace(/\/api$/, '') + '/uploads').replace(/\/+$/, '');
 
 export const getUploadUrl = (pathOrUrl) => {
