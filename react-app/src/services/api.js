@@ -2,8 +2,9 @@
 function inferRenderApiBaseUrl() {
   if (typeof window === 'undefined') return null;
   const host = window.location.hostname || '';
-  if (host.endsWith('.onrender.com') && host.includes('-web')) {
-    return `https://${host.replace('-web.onrender.com', '-api.onrender.com')}/api`;
+  const match = host.match(/^(.+)-web(?:-[a-z0-9]+)?\.onrender\.com$/i);
+  if (match) {
+    return `https://${match[1]}-api.onrender.com/api`;
   }
   return null;
 }
