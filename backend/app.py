@@ -1302,8 +1302,11 @@ def get_events():
     for r in rows:
         if r.get('date'):
             r['date'] = str(r['date'])
-        if r.get('event_time') and not r.get('time'):
-            r['time'] = str(r['event_time'])
+        # MySQL TIME can come as timedelta; normalize for JSON response.
+        if r.get('event_time') is not None:
+            r['event_time'] = str(r['event_time'])
+            if not r.get('time'):
+                r['time'] = r['event_time']
         if r.get('created_at'):
             r['created_at'] = str(r['created_at'])
     return jsonify(rows)
