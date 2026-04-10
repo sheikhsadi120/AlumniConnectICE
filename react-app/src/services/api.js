@@ -39,7 +39,7 @@ async function request(path, options = {}) {
     return { ok: res.ok, status: res.status, data };
   } catch (error) {
     console.error('Request failed:', error);
-    throw new Error(`Failed to fetch: ${error.message}`);
+    throw new Error(`Failed to fetch ${BASE_URL}${path}: ${error.message}`);
   }
 }
 

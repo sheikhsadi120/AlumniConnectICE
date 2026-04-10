@@ -80,7 +80,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'change-me-in-production')
 PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
 
 # CORS
-CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), 'http://localhost:5173,http://localhost:5174')
+# Keep deployment resilient: if CORS_ORIGINS is missing, allow all origins.
+# For production hardening, explicitly set CORS_ORIGINS in Render env.
+CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), '*')
 
 # Admin credentials
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
