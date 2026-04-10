@@ -19,6 +19,7 @@ import config
 import os
 import uuid
 import random
+from threading import Lock
 from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 
@@ -43,6 +44,9 @@ CORS(
     methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allow_headers=['Content-Type', 'Authorization'],
 )
+
+_db_ready = False
+_db_ready_lock = Lock()
 
 
 def _mysql_ssl_kwargs():
@@ -293,6 +297,30 @@ except Exception as e:
     print(f"[DB MIGRATION] Skipped due to error: {e}")
 
 
+def ensure_runtime_db_ready():
+    """Best-effort runtime DB bootstrap for managed deploys.
+
+    This helps recover from transient startup ordering issues where DB was not
+    reachable during initial boot but becomes reachable later.
+    """
+    global _db_ready
+    if _db_ready:
+        return
+
+    with _db_ready_lock:
+        if _db_ready:
+            return
+
+        try:
+            # On Render, attempt bootstrap even if env value is stale.
+            if config.AUTO_INIT_DB or os.getenv('RENDER'):
+                init_db_tables_from_schema()
+            ensure_db_migrations()
+            _db_ready = True
+        except Exception as e:
+            print(f"[DB RUNTIME INIT] Deferred due to error: {e}")
+
+
 def build_upload_url(filename):
     if not filename:
         return None
@@ -509,6 +537,11 @@ def handle_exception(e):
                 'success': False,
                 'message': 'Database SSL error. For Aiven set MYSQL_SSL_MODE=required and configure MYSQL_SSL_CA if needed.'
             }), 503
+        if code == 1049:
+            return jsonify({
+                'success': False,
+                'message': 'Unknown database selected. Verify MYSQL_DB and run DB schema initialization.'
+            }), 503
 
     if isinstance(e, pymysql_err.ProgrammingError):
         code = e.args[0] if e.args else None
@@ -531,6 +564,7 @@ def not_found(e):
 def get_db():
     """Return a per-request cached DB connection (auto-closed at request teardown)."""
     if 'db' not in g:
+        ensure_runtime_db_ready()
         g.db = pymysql.connect(**_mysql_connect_kwargs(include_database=True, dict_cursor=True, autocommit=False))
     return g.db
 
