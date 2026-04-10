@@ -23,8 +23,8 @@ function AdminLogin() {
       } else {
         setError(data.message || 'Invalid username or password.')
       }
-    } catch (_) {
-      setError('Cannot reach server. Please make sure the backend is running.')
+    } catch (err) {
+      setError(err?.message || 'Cannot reach server. Please make sure the backend is running.')
     } finally {
       setLoading(false)
     }

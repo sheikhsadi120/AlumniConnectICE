@@ -9,7 +9,8 @@ function inferRenderApiBaseUrl() {
 }
 
 const inferredBase = inferRenderApiBaseUrl();
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || inferredBase || 'http://localhost:5000/api').replace(/\/+$/, '');
+const RENDER_DEFAULT_API_BASE = 'https://alumniconnect-api.onrender.com/api';
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || inferredBase || RENDER_DEFAULT_API_BASE || 'http://localhost:5000/api').replace(/\/+$/, '');
 const UPLOAD_BASE_URL = (import.meta.env.VITE_UPLOAD_BASE_URL || BASE_URL.replace(/\/api$/, '') + '/uploads').replace(/\/+$/, '');
 
 export const getUploadUrl = (pathOrUrl) => {
