@@ -29,11 +29,17 @@ from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 import re
 
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+DEFAULT_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', DEFAULT_UPLOAD_FOLDER)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 ALLOWED_DOCUMENT_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 ALLOWED_EXISTING_LIST_EXTENSIONS = {'xlsx', 'xls'}
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+try:
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+except OSError:
+    # Vercel filesystem can be read-only outside /tmp.
+    UPLOAD_FOLDER = '/tmp/alumniconnect_uploads'
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
