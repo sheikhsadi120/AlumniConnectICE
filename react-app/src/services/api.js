@@ -1,15 +1,13 @@
 // ─── Centralised API helper ───────────────────────────
-const RENDER_DEFAULT_API_BASE = 'https://alumniconnect-api.onrender.com/api';
 
 const normalizeBaseUrl = (value) => {
   if (!value) return null;
   return String(value).trim().replace(/\/+$/, '');
 };
 
-function inferRenderApiBaseCandidates() {
+function inferApiBaseCandidates() {
   if (typeof window === 'undefined') return [];
 
-  const host = window.location.hostname || '';
   const origin = window.location.origin || '';
   const candidates = [];
 
@@ -18,50 +16,21 @@ function inferRenderApiBaseCandidates() {
     candidates.push(`${origin}/api`);
   }
 
-  if (!/\.onrender\.com$/i.test(host)) {
-    return candidates;
-  }
-
-  const namedMatch = host.match(/^(.+?)-(web|frontend|front|fe|client|ui)(?:-([a-z0-9]+))?\.onrender\.com$/i);
-  if (namedMatch) {
-    const baseName = namedMatch[1];
-    const suffix = namedMatch[3];
-    if (suffix) {
-      candidates.push(`https://${baseName}-api-${suffix}.onrender.com/api`);
-    }
-    candidates.push(`https://${baseName}-api.onrender.com/api`);
-  }
-
-  const replaceSuffix = (suffixes) => {
-    for (const suffix of suffixes) {
-      if (host.endsWith(`${suffix}.onrender.com`)) {
-        const apiHost = host.replace(new RegExp(`${suffix}\\.onrender\\.com$`, 'i'), '-api.onrender.com');
-        candidates.push(`https://${apiHost}/api`);
-        return;
-      }
-    }
-  };
-
-  replaceSuffix(['-web', '-frontend', '-front', '-fe', '-client', '-ui']);
-
-  const parts = host.replace(/\.onrender\.com$/i, '').split('-').filter(Boolean);
-  if (parts.length > 1) {
-    const guessed = `${parts.slice(0, -1).join('-')}-api.onrender.com`;
-    candidates.push(`https://${guessed}/api`);
-  }
-
   return candidates;
 }
 
 const envBase = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
-const inferredBases = inferRenderApiBaseCandidates().map(normalizeBaseUrl).filter(Boolean);
+const inferredBases = inferApiBaseCandidates().map(normalizeBaseUrl).filter(Boolean);
+const isLocalDevHost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname || '');
+const localDefaultBase = normalizeBaseUrl('http://localhost:5000/api');
+
+const prioritizedCandidates = isLocalDevHost
+  ? [envBase, localDefaultBase, ...inferredBases]
+  : [envBase, ...inferredBases, localDefaultBase];
 
 const API_BASE_CANDIDATES = Array.from(
   new Set([
-    envBase,
-    ...inferredBases,
-    normalizeBaseUrl(RENDER_DEFAULT_API_BASE),
-    normalizeBaseUrl('http://localhost:5000/api'),
+    ...prioritizedCandidates,
   ].filter(Boolean))
 );
 
@@ -100,6 +69,7 @@ async function request(path, options = {}) {
 
   const baseAttempts = getAttemptOrder();
   let lastNetworkError = null;
+  let lastHttpResult = null;
 
   for (const baseUrl of baseAttempts) {
     const headers = { ...(options.headers || {}) };
@@ -112,7 +82,8 @@ async function request(path, options = {}) {
         ...options,
         headers,
       });
-      activeBaseUrl = baseUrl;
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const isJsonResponse = contentType.includes('application/json');
 
       let data = {};
       try {
@@ -120,11 +91,24 @@ async function request(path, options = {}) {
       } catch (_) {
         data = { success: false, message: `Server error (HTTP ${res.status})` };
       }
+
+      // In local dev, a bad base (e.g. Vite origin/api) returns HTML 404.
+      // Retry with next candidate before surfacing an error.
+      if (!res.ok && res.status === 404 && !isJsonResponse) {
+        lastHttpResult = { status: res.status, data };
+        continue;
+      }
+
+      activeBaseUrl = baseUrl;
       return { ok: res.ok, status: res.status, data };
     } catch (error) {
       lastNetworkError = error;
       console.warn(`Request failed via ${baseUrl}${path}:`, error);
     }
+  }
+
+  if (lastHttpResult) {
+    return { ok: false, status: lastHttpResult.status, data: lastHttpResult.data };
   }
 
   const attempted = baseAttempts.join(', ');

@@ -27,3 +27,7 @@ react-app/.env.production
 .DS_Store
 Thumbs.db
 .vscode/
+.vercel/
+
+# Vercel build output
+.output/

@@ -102,7 +102,7 @@ PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL') or '').rstrip('/')
 
 # CORS
 # Keep deployment resilient: if CORS_ORIGINS is missing, allow all origins.
-# For production hardening, explicitly set CORS_ORIGINS in Render env.
+# For production hardening, explicitly set CORS_ORIGINS in environment variables.
 CORS_ORIGINS = _as_list(os.getenv('CORS_ORIGINS'), '*')
 
 # Admin credentials
@@ -117,6 +117,10 @@ SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
 SMTP_PASSWORD = (os.getenv('SMTP_PASSWORD', '') or '').replace(' ', '')
 SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USERNAME
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'AlumniConnect Admin')
+MAIL_PROVIDER = (os.getenv('MAIL_PROVIDER') or 'auto').strip().lower()
+BREVO_API_KEY = (os.getenv('BREVO_API_KEY') or '').strip()
+BREVO_API_URL = (os.getenv('BREVO_API_URL') or 'https://api.brevo.com/v3/smtp/email').strip()
+BREVO_TIMEOUT = _as_int(os.getenv('BREVO_TIMEOUT'), 20)
 
 # MySQL configuration
 MYSQL_URL = (
@@ -131,7 +135,7 @@ MYSQL_HOST = os.getenv('MYSQL_HOST') or os.getenv('MYSQLHOST') or os.getenv('AIV
 MYSQL_USER = os.getenv('MYSQL_USER') or os.getenv('MYSQLUSER') or os.getenv('AIVEN_USER') or 'root'
 MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD') or os.getenv('MYSQLPASSWORD') or os.getenv('AIVEN_PASSWORD') or ''
 MYSQL_DB = os.getenv('MYSQL_DB') or os.getenv('MYSQLDATABASE') or os.getenv('AIVEN_DB') or os.getenv('AIVEN_DATABASE') or 'alumniconnect'
-MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT') or os.getenv('AIVEN_PORT'), 3307)
+MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT') or os.getenv('AIVEN_PORT'), 3306)
 MYSQL_SSL_MODE = (os.getenv('MYSQL_SSL_MODE') or '').strip().lower()
 MYSQL_SSL_CA = (os.getenv('MYSQL_SSL_CA') or '').strip()
 MYSQL_CONNECT_TIMEOUT = _as_int(os.getenv('MYSQL_CONNECT_TIMEOUT'), 10)

@@ -10,8 +10,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 import smtplib
+import json
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 import pymysql
 import pymysql.cursors
 from pymysql import err as pymysql_err
@@ -46,13 +50,6 @@ def _expanded_cors_origins(origins):
             continue
 
         expanded.append(value)
-
-        # Render preview deployments often append a short suffix to service hosts
-        # (for example: alumniconnect-web-e8b6.onrender.com).
-        m = re.match(r"^https://([a-z0-9-]+(?:-(?:web|frontend|front|fe|client|ui)))\.onrender\.com$", value, re.IGNORECASE)
-        if m:
-            host_base = m.group(1)
-            expanded.append(rf"^https://{re.escape(host_base)}(?:-[a-z0-9]+)?\.onrender\.com$")
 
     return expanded
 
@@ -339,8 +336,7 @@ def ensure_runtime_db_ready():
 
         _db_init_attempted = True  # Mark attempt BEFORE trying, so failures don't retry
         try:
-            # On Render, attempt bootstrap even if env value is stale.
-            if config.AUTO_INIT_DB or os.getenv('RENDER'):
+            if config.AUTO_INIT_DB:
                 init_db_tables_from_schema()
             ensure_db_migrations()
             _db_ready = True
@@ -435,7 +431,26 @@ def fetch_email_logs(conn, limit=10):
 
 
 def smtp_configured():
-        return bool(config.SMTP_HOST and config.SMTP_PORT and config.SMTP_USERNAME and config.SMTP_PASSWORD and config.SMTP_FROM_EMAIL)
+    return bool(
+        config.SMTP_HOST
+        and config.SMTP_PORT
+        and config.SMTP_USERNAME
+        and config.SMTP_PASSWORD
+        and config.SMTP_FROM_EMAIL
+    )
+
+
+def brevo_configured():
+    return bool(config.BREVO_API_KEY and config.SMTP_FROM_EMAIL)
+
+
+def active_mail_provider():
+    provider = (config.MAIL_PROVIDER or 'auto').strip().lower()
+    if provider in {'smtp', 'brevo'}:
+        return provider
+    if brevo_configured():
+        return 'brevo'
+    return 'smtp'
 
 
 def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'):
@@ -476,40 +491,133 @@ def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'
 
 
 def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniConnect'):
-        recipients = [e.strip() for e in (to_emails or []) if str(e).strip()]
-        if not recipients:
-                return {'sent': 0, 'failed': 0, 'errors': []}
+    recipients = [e.strip() for e in (to_emails or []) if str(e).strip()]
+    if not recipients:
+        return {'sent': 0, 'failed': 0, 'errors': []}
 
-        if not smtp_configured():
-                raise RuntimeError('SMTP is not configured. Set SMTP_* in backend/.env.')
+    html_content = _build_email_html(subject, preheader, message, cta_text)
+    plain_content = f"{subject}\n\n{preheader}\n\n{message}\n"
+    provider = active_mail_provider()
 
-        html_content = _build_email_html(subject, preheader, message, cta_text)
-        plain_content = f"{subject}\n\n{preheader}\n\n{message}\n"
+    if provider == 'brevo':
+        return _send_email_via_brevo_with_fallback(recipients, subject, plain_content, html_content)
 
-        sent_count = 0
-        failed_count = 0
-        errors = []
+    return _send_email_via_smtp(recipients, subject, plain_content, html_content)
 
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
-                if config.SMTP_USE_TLS:
-                        server.starttls()
-                server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
 
-                for email in recipients:
-                        msg = MIMEMultipart('alternative')
-                        msg['Subject'] = subject
-                        msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
-                        msg['To'] = email
-                        msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
-                        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
-                        try:
-                                server.sendmail(config.SMTP_FROM_EMAIL, [email], msg.as_string())
-                                sent_count += 1
-                        except Exception as ex:
-                                failed_count += 1
-                                errors.append({'email': email, 'error': str(ex)})
+def _send_email_via_brevo_with_fallback(recipients, subject, plain_content, html_content):
+    if not brevo_configured():
+        raise RuntimeError('Brevo is not configured. Set BREVO_API_KEY and SMTP_FROM_EMAIL in backend/.env.')
 
-        return {'sent': sent_count, 'failed': failed_count, 'errors': errors}
+    result = _send_email_via_brevo(recipients, subject, plain_content, html_content)
+    if result['failed'] == 0:
+        return result
+
+    # Keep delivery stable: if Brevo partially fails and SMTP is configured, retry only failed recipients via SMTP.
+    if smtp_configured():
+        failed_emails = [item['email'] for item in result['errors'] if item.get('email')]
+        if failed_emails:
+            smtp_result = _send_email_via_smtp(failed_emails, subject, plain_content, html_content)
+            return {
+                'sent': result['sent'] + smtp_result['sent'],
+                'failed': smtp_result['failed'],
+                'errors': smtp_result['errors'],
+            }
+
+    return result
+
+
+def _send_email_via_brevo(recipients, subject, plain_content, html_content):
+    sent_count = 0
+    failed_count = 0
+    errors = []
+    timeout = max(5, int(config.BREVO_TIMEOUT or 20))
+
+    for email in recipients:
+        payload = {
+            'sender': {'name': config.SMTP_FROM_NAME, 'email': config.SMTP_FROM_EMAIL},
+            'to': [{'email': email}],
+            'subject': str(subject or ''),
+            'htmlContent': html_content,
+            'textContent': plain_content,
+        }
+        data = json.dumps(payload).encode('utf-8')
+
+        # Small retry window for transient Brevo API/network issues.
+        sent = False
+        last_error = 'unknown error'
+        for attempt in range(3):
+            req = urllib_request.Request(
+                config.BREVO_API_URL,
+                data=data,
+                method='POST',
+                headers={
+                    'accept': 'application/json',
+                    'content-type': 'application/json',
+                    'api-key': config.BREVO_API_KEY,
+                },
+            )
+            try:
+                with urllib_request.urlopen(req, timeout=timeout) as resp:
+                    status = getattr(resp, 'status', 0)
+                    if 200 <= status < 300:
+                        sent = True
+                        break
+                    last_error = f'Brevo returned status {status}'
+            except urllib_error.HTTPError as ex:
+                body = ex.read().decode('utf-8', errors='ignore') if hasattr(ex, 'read') else ''
+                last_error = f'Brevo HTTP {ex.code}: {body[:220]}'
+                if ex.code in {429, 500, 502, 503, 504} and attempt < 2:
+                    time.sleep(1 + attempt)
+                    continue
+                break
+            except urllib_error.URLError as ex:
+                last_error = f'Brevo network error: {ex.reason}'
+                if attempt < 2:
+                    time.sleep(1 + attempt)
+                    continue
+                break
+            except Exception as ex:
+                last_error = str(ex)
+                break
+
+        if sent:
+            sent_count += 1
+        else:
+            failed_count += 1
+            errors.append({'email': email, 'error': last_error})
+
+    return {'sent': sent_count, 'failed': failed_count, 'errors': errors}
+
+
+def _send_email_via_smtp(recipients, subject, plain_content, html_content):
+    if not smtp_configured():
+        raise RuntimeError('SMTP is not configured. Set SMTP_* in backend/.env.')
+
+    sent_count = 0
+    failed_count = 0
+    errors = []
+
+    with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
+        if config.SMTP_USE_TLS:
+            server.starttls()
+        server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
+
+        for email in recipients:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
+            msg['To'] = email
+            msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
+            msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+            try:
+                server.sendmail(config.SMTP_FROM_EMAIL, [email], msg.as_string())
+                sent_count += 1
+            except Exception as ex:
+                failed_count += 1
+                errors.append({'email': email, 'error': str(ex)})
+
+    return {'sent': sent_count, 'failed': failed_count, 'errors': errors}
 
 
 def normalize_user_type(value):
