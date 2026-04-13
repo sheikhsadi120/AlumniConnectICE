@@ -203,25 +203,14 @@ CREATE TABLE IF NOT EXISTS existing_lists (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- ── Seed sample data ──────────────────────────────────
+-- Persistent uploaded image/document storage (serverless-safe)
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    file_key      VARCHAR(255) NOT NULL UNIQUE,
+    original_name VARCHAR(255) DEFAULT NULL,
+    content_type  VARCHAR(120) DEFAULT NULL,
+    file_data     LONGBLOB NOT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
-INSERT IGNORE INTO alumni (name, email, phone, department, student_id, session, company, designation, password, status) VALUES
-('Tanvir Hossain', 'tanvir@gmail.com', '+8801811000001', 'ICE', '1401001', '2014-2018', 'StartupBD',   'CEO',          '$2b$12$xSeedHashPlaceholder1xxxxx', 'approved'),
-('Nadia Akter',    'nadia@gmail.com',  '+8801811000002', 'ICE', '1801002', '2018-2022', 'Pathao',      'Developer',    '$2b$12$xSeedHashPlaceholder2xxxxx', 'approved'),
-('Karim Uddin',    'karim@gmail.com',  '+8801811000003', 'ICE', '1301003', '2013-2017', 'Grameenphone','Network Engr', '$2b$12$xSeedHashPlaceholder3xxxxx', 'approved');
 
-INSERT IGNORE INTO events (title, date, location, description) VALUES
-('Annual Alumni Reunion 2026', '2026-05-15', 'RU Auditorium', 'Yearly gathering of all ICE alumni.'),
-('Career Development Webinar', '2026-04-10', 'Online (Zoom)',   'Tips on career growth by senior alumni.'),
-('Freshers Welcome Ceremony',  '2026-03-20', 'ICE Department',  'Welcome event for new ICE students.');
-
-INSERT IGNORE INTO fund_transactions (donor, type, amount, date, note) VALUES
-('Tanvir Hossain', 'Donation',      5000,  '2026-02-10', 'Annual fund contribution'),
-('Nadia Akter',    'Sponsorship',   12000, '2026-02-18', 'Event sponsorship'),
-('Karim Uddin',    'Donation',      3500,  '2026-02-25', 'Department support'),
-('Anika Rahman',   'Membership Fee',1000,  '2026-03-01', 'Annual membership');
-
-INSERT IGNORE INTO trainings (title, trainer, date, seats, enrolled, status) VALUES
-('React & Modern Web Dev',  'Tanvir Hossain', '2026-04-05', 30, 18, 'Upcoming'),
-('Leadership & Management', 'Nadia Akter',    '2026-03-22', 25, 25, 'Full'),
-('Data Science Bootcamp',   'Karim Uddin',    '2026-05-10', 20,  9, 'Upcoming');

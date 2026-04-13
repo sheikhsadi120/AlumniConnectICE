@@ -4,7 +4,7 @@ Run: python app.py
 Endpoints all prefixed /api/
 """
 
-from flask import Flask, request, jsonify, send_from_directory, g
+from flask import Flask, request, jsonify, send_from_directory, send_file, g
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -28,6 +28,8 @@ from threading import Lock
 from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 import re
+from io import BytesIO
+import mimetypes
 
 DEFAULT_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', DEFAULT_UPLOAD_FOLDER)
@@ -253,6 +255,14 @@ def ensure_db_migrations():
                 FOREIGN KEY (alumni_id) REFERENCES alumni(id) ON DELETE CASCADE,
                 INDEX idx_password_reset_lookup (email, user_type, used, expires_at)
             )""",
+            """CREATE TABLE IF NOT EXISTS uploaded_files (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                file_key      VARCHAR(255) NOT NULL UNIQUE,
+                original_name VARCHAR(255) DEFAULT NULL,
+                content_type  VARCHAR(120) DEFAULT NULL,
+                file_data     LONGBLOB NOT NULL,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
         ]
         
         for stmt in create_stmts:
@@ -355,8 +365,103 @@ def ensure_runtime_db_ready():
 def build_upload_url(filename):
     if not filename:
         return None
-    base_url = config.PUBLIC_BASE_URL or request.host_url.rstrip('/')
+    base_url = (config.PUBLIC_BASE_URL or request.host_url.rstrip('/')).rstrip('/')
+    if base_url.endswith('/api'):
+        base_url = base_url[:-4]
     return f"{base_url}/uploads/{filename}"
+
+
+def save_uploaded_image(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    ext = file_storage.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return None
+
+    safe_name = secure_filename(file_storage.filename)
+    file_key = f"{uuid.uuid4().hex}_{safe_name}"
+    file_bytes = file_storage.read()
+    if not file_bytes:
+        return None
+
+    db_saved = False
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uploaded_files (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                file_key      VARCHAR(255) NOT NULL UNIQUE,
+                original_name VARCHAR(255) DEFAULT NULL,
+                content_type  VARCHAR(120) DEFAULT NULL,
+                file_data     LONGBLOB NOT NULL,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO uploaded_files (file_key, original_name, content_type, file_data)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (
+                file_key,
+                file_storage.filename,
+                (file_storage.mimetype or '').strip() or None,
+                file_bytes,
+            ),
+        )
+        conn.commit()
+        cur.close()
+        db_saved = True
+    except Exception as ex:
+        print(f"[UPLOAD STORE] warning: failed to persist file in DB: {ex}")
+        return None
+
+    if db_saved:
+        local_path = os.path.join(UPLOAD_FOLDER, file_key)
+        try:
+            with open(local_path, 'wb') as out:
+                out.write(file_bytes)
+        except OSError:
+            # Non-fatal in serverless/read-only environments; DB copy is the source of truth.
+            pass
+
+    return file_key
+
+
+def fetch_uploaded_file(file_key):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT file_data, content_type FROM uploaded_files WHERE file_key=%s LIMIT 1",
+            (file_key,),
+        )
+        row = cur.fetchone()
+        return row
+    except Exception:
+        return None
+    finally:
+        cur.close()
+
+
+def send_registration_received_email(name, email, user_type):
+    role_label = 'student' if user_type == 'student' else 'alumni'
+    send_email(
+        [email],
+        'Registration request received - AlumniConnect',
+        (
+            f"Hi {name or 'there'},\n\n"
+            f"We received your {role_label} registration request. "
+            "Your account is now pending admin approval.\n\n"
+            "You will get another email once your account is approved."
+        ),
+        'Your registration is in review.',
+        'Open AlumniConnect'
+    )
 
 
 def fetch_past_jobs(conn, alumni_id):
@@ -724,7 +829,26 @@ def close_db(error):
 
 @app.route('/uploads/<path:filename>')
 def serve_upload(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    local_path = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.isfile(local_path):
+        return send_from_directory(UPLOAD_FOLDER, filename)
+
+    row = fetch_uploaded_file(filename)
+    if not row or not row.get('file_data'):
+        return jsonify({'success': False, 'message': 'File not found'}), 404
+
+    content_type = (row.get('content_type') or '').strip() or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+    return send_file(
+        BytesIO(row['file_data']),
+        mimetype=content_type,
+        as_attachment=False,
+        download_name=filename,
+    )
+
+
+@app.route('/api/uploads/<path:filename>')
+def serve_upload_api_alias(filename):
+    return serve_upload(filename)
 
 
 # ═══════════════════════════════════════════════════════
@@ -1009,25 +1133,11 @@ def register():
         return jsonify({'success': False, 'message': 'Password must be at least 6 characters.'}), 400
 
     # Save profile photo if provided
-    photo_filename = None
-    if photo_file and photo_file.filename:
-        ext = photo_file.filename.rsplit('.', 1)[-1].lower()
-        if ext in ALLOWED_EXTENSIONS:
-            safe_name = secure_filename(photo_file.filename)
-            import uuid
-            photo_filename = f"{uuid.uuid4().hex}_{safe_name}"
-            photo_file.save(os.path.join(UPLOAD_FOLDER, photo_filename))
+    photo_filename = save_uploaded_image(photo_file)
 
     # Save ID card photo if provided
     idcard_file = request.files.get('idcard') if (request.content_type and 'multipart/form-data' in request.content_type) else None
-    idcard_filename = None
-    if idcard_file and idcard_file.filename:
-        ext = idcard_file.filename.rsplit('.', 1)[-1].lower()
-        if ext in ALLOWED_EXTENSIONS:
-            safe_name = secure_filename(idcard_file.filename)
-            import uuid
-            idcard_filename = f"{uuid.uuid4().hex}_{safe_name}"
-            idcard_file.save(os.path.join(UPLOAD_FOLDER, idcard_filename))
+    idcard_filename = save_uploaded_image(idcard_file)
 
     email = (data.get('email') or '').strip()
     hashed = generate_password_hash(data['password'])
@@ -1077,10 +1187,16 @@ def register():
                 )
             )
             conn.commit()
+            warning = None
+            try:
+                send_registration_received_email(data.get('name'), email, user_type)
+            except Exception as ex:
+                warning = str(ex)
             return jsonify({
                 'success': True,
                 'id': existing['id'],
-                'message': 'Registration submitted. Waiting for admin approval.'
+                'message': 'Registration submitted. Waiting for admin approval.',
+                'email_warning': warning,
             }), 201
 
         cur.execute(
@@ -1106,7 +1222,18 @@ def register():
     finally:
         cur.close()
 
-    return jsonify({'success': True, 'id': new_id, 'message': 'Registration submitted. Waiting for admin approval.'}), 201
+    warning = None
+    try:
+        send_registration_received_email(data.get('name'), email, user_type)
+    except Exception as ex:
+        warning = str(ex)
+
+    return jsonify({
+        'success': True,
+        'id': new_id,
+        'message': 'Registration submitted. Waiting for admin approval.',
+        'email_warning': warning,
+    }), 201
 
 
 @app.route('/api/pending', methods=['GET'])
@@ -1318,9 +1445,7 @@ def request_upgrade(aid):
         if ext not in ALLOWED_DOCUMENT_EXTENSIONS:
             cur.close()
             return jsonify({'success': False, 'message': 'Invalid file type. Upload JPG, JPEG, PNG, or WEBP image only.'}), 400
-        safe_name = secure_filename(document_file.filename)
-        document_filename = f"{uuid.uuid4().hex}_{safe_name}"
-        document_file.save(os.path.join(UPLOAD_FOLDER, document_filename))
+        document_filename = save_uploaded_image(document_file)
 
     # Optionally update graduation details provided at request time
     updates = []
