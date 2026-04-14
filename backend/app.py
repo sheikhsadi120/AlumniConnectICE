@@ -107,6 +107,10 @@ def _mysql_connect_kwargs(include_database=False, dict_cursor=False, autocommit=
         'connect_timeout': config.MYSQL_CONNECT_TIMEOUT,
         'autocommit': autocommit,
     }
+    if config.MYSQL_READ_TIMEOUT and config.MYSQL_READ_TIMEOUT > 0:
+        kwargs['read_timeout'] = config.MYSQL_READ_TIMEOUT
+    if config.MYSQL_WRITE_TIMEOUT and config.MYSQL_WRITE_TIMEOUT > 0:
+        kwargs['write_timeout'] = config.MYSQL_WRITE_TIMEOUT
     if include_database:
         kwargs['database'] = config.MYSQL_DB
     if dict_cursor:
@@ -117,6 +121,54 @@ def _mysql_connect_kwargs(include_database=False, dict_cursor=False, autocommit=
         kwargs['ssl'] = ssl_kwargs
 
     return kwargs
+
+
+_TRANSIENT_MYSQL_ERROR_CODES = {
+    1047,  # Unknown command (server restart races)
+    1152,  # Aborted connection
+    1153,  # Packet too large/network disruption
+    1205,  # Lock wait timeout
+    1213,  # Deadlock found
+    2003,  # Can't connect to MySQL server
+    2005,  # Unknown MySQL server host
+    2006,  # MySQL server has gone away
+    2013,  # Lost connection during query
+}
+
+
+def _is_transient_mysql_error(exc):
+    if not isinstance(exc, pymysql_err.OperationalError):
+        return False
+    code = exc.args[0] if exc.args else None
+    return code in _TRANSIENT_MYSQL_ERROR_CODES
+
+
+def _connect_mysql_with_retry(include_database=False, dict_cursor=False, autocommit=False):
+    attempts = max(0, int(config.DB_CONNECT_RETRIES)) + 1
+    last_error = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return pymysql.connect(
+                **_mysql_connect_kwargs(
+                    include_database=include_database,
+                    dict_cursor=dict_cursor,
+                    autocommit=autocommit,
+                )
+            )
+        except pymysql_err.OperationalError as e:
+            last_error = e
+            if attempt >= attempts or not _is_transient_mysql_error(e):
+                raise
+
+            backoff = config.DB_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            sleep_seconds = min(config.DB_RETRY_MAX_DELAY, max(0.1, backoff))
+            sleep_seconds += random.uniform(0, min(0.25, sleep_seconds * 0.2))
+            code = e.args[0] if e.args else '?'
+            print(f"[DB CONNECT] transient error {code}; retry {attempt}/{attempts - 1} in {sleep_seconds:.2f}s")
+            time.sleep(sleep_seconds)
+
+    raise last_error
 
 
 def init_db_tables_from_schema():
@@ -151,14 +203,14 @@ def init_db_tables_from_schema():
     # Prefer connecting to an existing DB first (works for managed providers where CREATE DATABASE is restricted).
     db_conn = None
     try:
-        db_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
+        db_conn = _connect_mysql_with_retry(include_database=True, autocommit=True)
     except pymysql_err.OperationalError as e:
         code = e.args[0] if e.args else None
         if code != 1049:  # Unknown database
             raise
 
         # Database does not exist. Try to create it if privileges allow.
-        bootstrap_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=False, autocommit=True))
+        bootstrap_conn = _connect_mysql_with_retry(include_database=False, autocommit=True)
         try:
             cur = bootstrap_conn.cursor()
             cur.execute(f"CREATE DATABASE IF NOT EXISTS `{config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
@@ -166,7 +218,7 @@ def init_db_tables_from_schema():
         finally:
             bootstrap_conn.close()
 
-        db_conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
+        db_conn = _connect_mysql_with_retry(include_database=True, autocommit=True)
 
     try:
         cur = db_conn.cursor()
@@ -179,7 +231,7 @@ def init_db_tables_from_schema():
 
 def ensure_db_migrations():
     """Apply small safe migrations for already-existing databases."""
-    conn = pymysql.connect(**_mysql_connect_kwargs(include_database=True, autocommit=True))
+    conn = _connect_mysql_with_retry(include_database=True, autocommit=True)
     try:
         cur = conn.cursor()
         
@@ -880,10 +932,15 @@ def handle_exception(e):
                 'success': False,
                 'message': 'Database authentication failed. Set MYSQL_USER and MYSQL_PASSWORD in backend/.env, then restart backend.'
             }), 503
-        if code in {2003, 2005}:
+        if code == 2003:
             return jsonify({
                 'success': False,
                 'message': 'Database unreachable. Verify MYSQL_HOST, MYSQL_PORT, and network allowlist in your DB provider.'
+            }), 503
+        if code == 2005:
+            return jsonify({
+                'success': False,
+                'message': 'Database hostname is not resolvable. Check MYSQL_HOST or set MYSQL_URL from Aiven service URI.'
             }), 503
         if code == 2026:
             return jsonify({
@@ -916,9 +973,21 @@ def not_found(e):
 # ─── DB connection helper ──────────────────────────────
 def get_db():
     """Return a per-request cached DB connection (auto-closed at request teardown)."""
-    if 'db' not in g:
+    db = g.get('db')
+    if db is None:
         ensure_runtime_db_ready()
-        g.db = pymysql.connect(**_mysql_connect_kwargs(include_database=True, dict_cursor=True, autocommit=False))
+        g.db = _connect_mysql_with_retry(include_database=True, dict_cursor=True, autocommit=False)
+        return g.db
+
+    # Heal stale pooled connections between requests.
+    try:
+        db.ping(reconnect=True)
+    except Exception:
+        try:
+            db.close()
+        except Exception:
+            pass
+        g.db = _connect_mysql_with_retry(include_database=True, dict_cursor=True, autocommit=False)
     return g.db
 
 @app.teardown_appcontext

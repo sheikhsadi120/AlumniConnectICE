@@ -53,6 +53,13 @@ def _as_int(value, default):
 		return default
 
 
+def _as_float(value, default):
+	try:
+		return float(value)
+	except (TypeError, ValueError):
+		return default
+
+
 def _as_list(value, default=''):
 	raw = value if value is not None else default
 	return [item.strip() for item in str(raw).split(',') if item.strip()]
@@ -141,6 +148,11 @@ MYSQL_PORT = _as_int(os.getenv('MYSQL_PORT') or os.getenv('MYSQLPORT') or os.get
 MYSQL_SSL_MODE = (os.getenv('MYSQL_SSL_MODE') or '').strip().lower()
 MYSQL_SSL_CA = (os.getenv('MYSQL_SSL_CA') or '').strip()
 MYSQL_CONNECT_TIMEOUT = _as_int(os.getenv('MYSQL_CONNECT_TIMEOUT'), 10)
+MYSQL_READ_TIMEOUT = _as_int(os.getenv('MYSQL_READ_TIMEOUT'), 30)
+MYSQL_WRITE_TIMEOUT = _as_int(os.getenv('MYSQL_WRITE_TIMEOUT'), 30)
+DB_CONNECT_RETRIES = _as_int(os.getenv('DB_CONNECT_RETRIES'), 5)
+DB_RETRY_BASE_DELAY = _as_float(os.getenv('DB_RETRY_BASE_DELAY'), 0.6)
+DB_RETRY_MAX_DELAY = _as_float(os.getenv('DB_RETRY_MAX_DELAY'), 8.0)
 
 _parsed_mysql = _parse_mysql_url(MYSQL_URL)
 if _parsed_mysql:
