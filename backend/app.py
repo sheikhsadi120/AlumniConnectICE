@@ -579,6 +579,9 @@ def active_mail_provider():
     provider = (config.MAIL_PROVIDER or 'auto').strip().lower()
     if provider in {'smtp', 'brevo'}:
         return provider
+    # In auto mode prefer SMTP when available; it is often accepted better by institutional inboxes.
+    if smtp_configured():
+        return 'smtp'
     if brevo_configured():
         return 'brevo'
     return 'smtp'
@@ -680,10 +683,26 @@ def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniC
                 total_failed += result.get('failed', 0)
                 all_errors.extend(result.get('errors', []))
         else:
-            result = _send_email_via_smtp(regular_recipients, subject, plain_content, html_content)
-            total_sent += result.get('sent', 0)
-            total_failed += result.get('failed', 0)
-            all_errors.extend(result.get('errors', []))
+            try:
+                result = _send_email_via_smtp(regular_recipients, subject, plain_content, html_content)
+            except Exception as ex:
+                if brevo_configured():
+                    brevo_result = _send_email_via_brevo(regular_recipients, subject, plain_content, html_content)
+                    total_sent += brevo_result.get('sent', 0)
+                    total_failed += brevo_result.get('failed', 0)
+                    all_errors.extend(brevo_result.get('errors', []))
+                    if brevo_result.get('failed', 0) > 0:
+                        all_errors.append({'email': '*', 'error': f'SMTP error before Brevo fallback: {str(ex)}'})
+                else:
+                    total_failed += len(regular_recipients)
+                    all_errors.extend([
+                        {'email': email, 'error': f'SMTP error and Brevo unavailable: {str(ex)}'}
+                        for email in regular_recipients
+                    ])
+            else:
+                total_sent += result.get('sent', 0)
+                total_failed += result.get('failed', 0)
+                all_errors.extend(result.get('errors', []))
 
     return {'sent': total_sent, 'failed': total_failed, 'errors': all_errors}
 
