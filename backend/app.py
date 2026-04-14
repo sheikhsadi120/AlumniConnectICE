@@ -629,11 +629,63 @@ def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniC
     html_content = _build_email_html(subject, preheader, message, cta_text)
     plain_content = f"{subject}\n\n{preheader}\n\n{message}\n"
     provider = active_mail_provider()
+    forced_domains = {d.strip().lower() for d in (config.MAIL_FORCE_SMTP_DOMAINS or []) if d and d.strip()}
 
-    if provider == 'brevo':
-        return _send_email_via_brevo_with_fallback(recipients, subject, plain_content, html_content)
+    forced_smtp_recipients = []
+    regular_recipients = []
+    for email in recipients:
+        domain = email.rsplit('@', 1)[-1].strip().lower() if '@' in email else ''
+        if domain and domain in forced_domains:
+            forced_smtp_recipients.append(email)
+        else:
+            regular_recipients.append(email)
 
-    return _send_email_via_smtp(recipients, subject, plain_content, html_content)
+    total_sent = 0
+    total_failed = 0
+    all_errors = []
+
+    if forced_smtp_recipients:
+        if smtp_configured():
+            smtp_result = _send_email_via_smtp(forced_smtp_recipients, subject, plain_content, html_content)
+            total_sent += smtp_result.get('sent', 0)
+            total_failed += smtp_result.get('failed', 0)
+            all_errors.extend(smtp_result.get('errors', []))
+        else:
+            total_failed += len(forced_smtp_recipients)
+            all_errors.extend([
+                {'email': email, 'error': 'SMTP fallback required for this domain but SMTP is not configured'}
+                for email in forced_smtp_recipients
+            ])
+
+    if regular_recipients:
+        if provider == 'brevo':
+            try:
+                result = _send_email_via_brevo_with_fallback(regular_recipients, subject, plain_content, html_content)
+            except Exception as ex:
+                if smtp_configured():
+                    smtp_result = _send_email_via_smtp(regular_recipients, subject, plain_content, html_content)
+                    total_sent += smtp_result.get('sent', 0)
+                    total_failed += smtp_result.get('failed', 0)
+                    all_errors.extend(smtp_result.get('errors', []))
+                    if smtp_result.get('failed', 0) > 0:
+                        all_errors.append({'email': '*', 'error': f'Brevo error before SMTP fallback: {str(ex)}'})
+                else:
+                    total_failed += len(regular_recipients)
+                    all_errors.extend([
+                        {'email': email, 'error': f'Brevo error and SMTP unavailable: {str(ex)}'}
+                        for email in regular_recipients
+                    ])
+            else:
+                total_sent += result.get('sent', 0)
+                total_failed += result.get('failed', 0)
+                all_errors.extend(result.get('errors', []))
+        else:
+            result = _send_email_via_smtp(regular_recipients, subject, plain_content, html_content)
+            total_sent += result.get('sent', 0)
+            total_failed += result.get('failed', 0)
+            all_errors.extend(result.get('errors', []))
+
+    return {'sent': total_sent, 'failed': total_failed, 'errors': all_errors}
 
 
 def _send_email_via_brevo_with_fallback(recipients, subject, plain_content, html_content):

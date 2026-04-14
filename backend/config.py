@@ -121,6 +121,7 @@ MAIL_PROVIDER = (os.getenv('MAIL_PROVIDER') or 'auto').strip().lower()
 BREVO_API_KEY = (os.getenv('BREVO_API_KEY') or '').strip()
 BREVO_API_URL = (os.getenv('BREVO_API_URL') or 'https://api.brevo.com/v3/smtp/email').strip()
 BREVO_TIMEOUT = _as_int(os.getenv('BREVO_TIMEOUT'), 20)
+MAIL_FORCE_SMTP_DOMAINS = _as_list(os.getenv('MAIL_FORCE_SMTP_DOMAINS'), 'ru.ac.bd')
 
 # MySQL configuration
 MYSQL_URL = (
