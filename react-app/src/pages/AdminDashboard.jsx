@@ -22,6 +22,7 @@ import {
   updateEvent,
   sendAdminEmail,
   getEmailLogs,
+  getUploadUrl,
 } from '../services/api'
 
 // These static arrays remain for chart demo data
@@ -50,6 +51,19 @@ export default function AdminDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
+  const normalizePersonMedia = useCallback((person) => {
+    if (!person || typeof person !== 'object') return person
+    return {
+      ...person,
+      photo_url: getUploadUrl(person.photo_url || person.photo || null),
+      id_photo_url: getUploadUrl(person.id_photo_url || person.id_photo || null),
+    }
+  }, [])
+
+  const normalizePeople = useCallback((items) => {
+    if (!Array.isArray(items)) return []
+    return items.map(normalizePersonMedia)
+  }, [normalizePersonMedia])
 
   const [pending,      setPending]      = useState([])
   const [alumni,       setAlumni]       = useState([])
@@ -135,9 +149,9 @@ export default function AdminDashboard() {
         getExistingLists(),
         getExistAlumni(),
       ])
-      if (pd.ok) setPending(pd.data)
-      if (al.ok) setAlumni(al.data)
-      if (st.ok) setStudents(st.data)
+      if (pd.ok) setPending(normalizePeople(pd.data))
+      if (al.ok) setAlumni(normalizePeople(al.data))
+      if (st.ok) setStudents(normalizePeople(st.data))
       if (ev.ok) setEvents(ev.data)
       if (tx.ok) setTransactions(tx.data)
       if (fr.ok) setFundRequests(fr.data)
@@ -145,12 +159,12 @@ export default function AdminDashboard() {
       if (jb.ok) setJobs(jb.data)
       if (stats_.ok) setStats(stats_.data)
       if (pj.ok) setPendingJobs(pj.data)
-      if (ur.ok) setUpgradeRequests(ur.data)
+      if (ur.ok) setUpgradeRequests(normalizePeople(ur.data))
       if (el.ok) setExistingLists(el.data)
       if (ea.ok) setExistAlumni(ea.data)
     } catch (_) {}
     setLoading(false)
-  }, [])
+  }, [normalizePeople])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 

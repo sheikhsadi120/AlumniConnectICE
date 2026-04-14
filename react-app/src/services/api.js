@@ -46,7 +46,15 @@ const getActiveUploadBaseUrl = () => {
 export const getUploadUrl = (pathOrUrl) => {
   if (!pathOrUrl) return null;
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
-  return `${getActiveUploadBaseUrl()}/${String(pathOrUrl).replace(/^\/+/, '')}`;
+  let normalized = String(pathOrUrl).trim();
+  if (!normalized) return null;
+
+  normalized = normalized.replace(/^\/+/, '');
+  normalized = normalized.replace(/^api\/uploads\//i, '');
+  normalized = normalized.replace(/^uploads\//i, '');
+
+  if (!normalized) return null;
+  return `${getActiveUploadBaseUrl()}/${normalized}`;
 };
 
 export const resolveAvatarUrl = (userLike) => {

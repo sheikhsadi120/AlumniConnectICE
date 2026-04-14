@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 import pymysql
 import pymysql.cursors
 from pymysql import err as pymysql_err
@@ -365,10 +366,29 @@ def ensure_runtime_db_ready():
 def build_upload_url(filename):
     if not filename:
         return None
+
+    raw_value = str(filename).strip()
+    if not raw_value:
+        return None
+
+    if raw_value.lower().startswith(('http://', 'https://')):
+        return raw_value
+
+    parsed = urlparse(raw_value)
+    normalized_key = parsed.path or raw_value
+    normalized_key = normalized_key.strip().lstrip('/')
+    if normalized_key.startswith('api/uploads/'):
+        normalized_key = normalized_key[len('api/uploads/'):]
+    elif normalized_key.startswith('uploads/'):
+        normalized_key = normalized_key[len('uploads/'):]
+
+    if not normalized_key:
+        return None
+
     base_url = (config.PUBLIC_BASE_URL or request.host_url.rstrip('/')).rstrip('/')
     if base_url.endswith('/api'):
         base_url = base_url[:-4]
-    return f"{base_url}/uploads/{filename}"
+    return f"{base_url}/uploads/{normalized_key}"
 
 
 def save_uploaded_image(file_storage):
