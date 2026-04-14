@@ -732,15 +732,24 @@ def _send_email_via_brevo(recipients, subject, plain_content, html_content):
     failed_count = 0
     errors = []
     timeout = max(5, int(config.BREVO_TIMEOUT or 20))
+    plain_only_domains = {
+        d.strip().lower()
+        for d in (getattr(config, 'MAIL_PLAIN_ONLY_DOMAINS', None) or [])
+        if d and d.strip()
+    }
 
     for email in recipients:
+        domain = email.rsplit('@', 1)[-1].strip().lower() if '@' in email else ''
+        plain_only = bool(domain and domain in plain_only_domains)
+
         payload = {
             'sender': {'name': config.SMTP_FROM_NAME, 'email': config.SMTP_FROM_EMAIL},
             'to': [{'email': email}],
             'subject': str(subject or ''),
-            'htmlContent': html_content,
             'textContent': plain_content,
         }
+        if not plain_only:
+            payload['htmlContent'] = html_content
         data = json.dumps(payload).encode('utf-8')
 
         # Small retry window for transient Brevo API/network issues.
