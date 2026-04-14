@@ -806,6 +806,11 @@ def _send_email_via_smtp(recipients, subject, plain_content, html_content):
     sent_count = 0
     failed_count = 0
     errors = []
+    plain_only_domains = {
+        d.strip().lower()
+        for d in (getattr(config, 'MAIL_PLAIN_ONLY_DOMAINS', None) or [])
+        if d and d.strip()
+    }
 
     with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
         if config.SMTP_USE_TLS:
@@ -813,12 +818,21 @@ def _send_email_via_smtp(recipients, subject, plain_content, html_content):
         server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
 
         for email in recipients:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
-            msg['To'] = email
-            msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
-            msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+            domain = email.rsplit('@', 1)[-1].strip().lower() if '@' in email else ''
+            plain_only = bool(domain and domain in plain_only_domains)
+
+            if plain_only:
+                msg = MIMEText(plain_content, 'plain', 'utf-8')
+                msg['Subject'] = subject
+                msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
+                msg['To'] = email
+            else:
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = subject
+                msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
+                msg['To'] = email
+                msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
+                msg.attach(MIMEText(html_content, 'html', 'utf-8'))
             try:
                 server.sendmail(config.SMTP_FROM_EMAIL, [email], msg.as_string())
                 sent_count += 1
