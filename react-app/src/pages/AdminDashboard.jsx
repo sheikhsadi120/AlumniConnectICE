@@ -78,6 +78,10 @@ export default function AdminDashboard() {
   const [upgradeRequests, setUpgradeRequests] = useState([])
   const [stats,        setStats]        = useState({ total_alumni:0, total_students:0, pending:0, events:0, total_funds:0, total_jobs:0 })
   const [loading,      setLoading]      = useState(true)
+  const [menuSeenKeys, setMenuSeenKeys] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('admin_menu_seen') || '[]')) }
+    catch { return new Set() }
+  })
 
   const [showModal,      setShowModal]      = useState(false)
   const [newEvent,       setNewEvent]       = useState({ title:'', date:'', time:'', location:'', description:'', fee:'', payment_account:'', audience:'both' })
@@ -681,18 +685,56 @@ export default function AdminDashboard() {
     alert(data?.message || 'Email send failed. Check SMTP settings and try again.')
   }
 
+  const menuNotifications = useMemo(() => [
+    ...events.map((e) => ({ key: `event-${e.id}` })),
+    ...jobs.map((j) => ({ key: `job-${j.id}` })),
+    ...trainings.map((t) => ({ key: `training-${t.id}` })),
+  ], [events, jobs, trainings])
+
+  const menuUnreadCounts = useMemo(() => ({
+    events: menuNotifications.filter((n) => n.key.startsWith('event-') && !menuSeenKeys.has(n.key)).length,
+    jobs: menuNotifications.filter((n) => n.key.startsWith('job-') && !menuSeenKeys.has(n.key)).length,
+    trainings: menuNotifications.filter((n) => n.key.startsWith('training-') && !menuSeenKeys.has(n.key)).length,
+  }), [menuNotifications, menuSeenKeys])
+
+  useEffect(() => {
+    const prefixByView = {
+      events: 'event-',
+      jobs: 'job-',
+      trainings: 'training-',
+    }
+    const targetPrefix = prefixByView[activeView]
+    if (!targetPrefix || menuNotifications.length === 0) return
+
+    setMenuSeenKeys((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      menuNotifications.forEach((n) => {
+        if (n.key.startsWith(targetPrefix) && !next.has(n.key)) {
+          next.add(n.key)
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem('admin_menu_seen', JSON.stringify([...next]))
+        return next
+      }
+      return prev
+    })
+  }, [activeView, menuNotifications])
+
   const navItems = [
     { view:'dashboard',    icon:'fa-gauge-high',      label:'Dashboard',          section:'Main Menu' },
     { view:'pending',      icon:'fa-clock',            label:'Pending Approvals',  badge: pending.length, section:null },
-    { view:'alumni',       icon:'fa-users',            label:'All Alumni',         section:null },
-    { view:'students',     icon:'fa-user-graduate',    label:'All Students',       section:null },
-    { view:'events',       icon:'fa-calendar-days',   label:'Events',             section:null },
-    { view:'jobs',         icon:'fa-briefcase',        label:'Jobs',               badge: pendingJobs.length, section:null },
+    { view:'alumni',       icon:'fa-user-graduate',    label:'All Alumni',         section:null },
+    { view:'students',     icon:'fa-users',            label:'All Students',       section:null },
+    { view:'events',       icon:'fa-calendar-days',   label:'Events',             badge: menuUnreadCounts.events, section:null },
+    { view:'jobs',         icon:'fa-briefcase',        label:'Jobs',               badge: menuUnreadCounts.jobs, section:null },
     { view:'exist-alumni', icon:'fa-list',             label:'Existing Alumni list', section:null },
     { view:'email-center', icon:'fa-envelope-open-text', label:'Email Center',    section:'Communication' },
     { view:'sms-center',   icon:'fa-comments',         label:'SMS Center',         section:null },
     { view:'transactions', icon:'fa-money-bill-wave', label:'Fund Transactions',  section:'Finance & Growth' },
-    { view:'trainings',    icon:'fa-chalkboard-user', label:'Trainings',          section:null },
+    { view:'trainings',    icon:'fa-chalkboard-user', label:'Trainings',          badge: menuUnreadCounts.trainings, section:null },
   ]
   const titles = {
     dashboard:    { title:'Dashboard',          sub:'Welcome back, Admin 👋' },

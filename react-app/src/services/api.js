@@ -140,6 +140,11 @@ export const register    = (formData) => {
 export const getAlumni       = ()        => request('/alumni');
 export const getStudents     = ()        => request('/students');
 export const updateAlumni    = (id, d)   => request(`/alumni/${id}`,   { method:'PUT',    body: JSON.stringify(d) });
+export const updateAlumniPhoto = (id, file) => {
+  const formData = new FormData();
+  formData.append('photo', file);
+  return request(`/alumni/${id}/photo`, { method:'POST', body: formData });
+};
 export const deleteAlumni    = (id)      => request(`/alumni/${id}`,   { method:'DELETE' });
 export const approveAlumni   = (id)      => request(`/approve/${id}`,  { method:'POST' });
 export const rejectAlumni    = (id)      => request(`/reject/${id}`,   { method:'POST' });

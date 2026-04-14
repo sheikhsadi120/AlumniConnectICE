@@ -14,14 +14,15 @@ import {
   getEnrolledTrainingIds,
   getRegisteredEventIds,
   requestUpgrade,
+  updateAlumniPhoto,
   resolveAvatarUrl,
 } from '../services/api'
 
 const sidebarItems = [
   { view: 'dashboard',    icon: 'fa-gauge',           label: 'Dashboard'    },
   { view: 'profile',      icon: 'fa-user-circle',     label: 'My Profile'   },
-  { view: 'directory',    icon: 'fa-users',           label: 'All Alumni'   },
-  { view: 'students-dir', icon: 'fa-user-graduate',   label: 'All Students' },
+  { view: 'directory',    icon: 'fa-user-graduate',   label: 'All Alumni'   },
+  { view: 'students-dir', icon: 'fa-users',           label: 'All Students' },
   { view: 'events',       icon: 'fa-calendar-days',   label: 'Events'       },
   { view: 'jobs',         icon: 'fa-briefcase',       label: 'Jobs'         },
   { view: 'trainings',    icon: 'fa-chalkboard-user', label: 'Trainings'    },
@@ -37,6 +38,47 @@ const titles = {
   jobs:         { title: 'Jobs',               sub: 'Browse and post job opportunities'           },
   trainings:    { title: 'Trainings',          sub: 'Available training programs'                 },
   membership:   { title: 'Membership',         sub: 'Your membership details'                    },
+}
+
+const normalizePastJobs = (jobs = []) => {
+  let source = jobs
+
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source)
+    } catch (_) {
+      source = []
+    }
+  }
+
+  if (source && !Array.isArray(source) && typeof source === 'object') {
+    source = source.past_jobs || source.jobs || source.items || []
+  }
+
+  if (!Array.isArray(source)) return []
+
+  return source
+    .map((j) => ({
+      company: String(j?.company || j?.company_name || j?.organization || j?.org || '').trim(),
+      designation: String(j?.designation || j?.role || j?.title || j?.position || '').trim(),
+      start_date: j?.start_date || j?.startDate || j?.from || '',
+      end_date: j?.end_date || j?.endDate || j?.to || '',
+    }))
+    .filter((j) => j.company || j.designation)
+}
+
+const getAlumniPastJobs = (alumni) => {
+  const normalized = normalizePastJobs(alumni?.past_jobs)
+  if (normalized.length > 0) return normalized
+
+  return normalizePastJobs([
+    {
+      company: alumni?.past_company || alumni?.previous_company || '',
+      designation: alumni?.past_designation || alumni?.previous_designation || '',
+      start_date: alumni?.past_job_start_date || alumni?.previous_job_start_date || '',
+      end_date: alumni?.past_job_end_date || alumni?.previous_job_end_date || '',
+    },
+  ])
 }
 
 export default function StudentDashboard() {
@@ -138,8 +180,11 @@ export default function StudentDashboard() {
   const [upgradeMsg, setUpgradeMsg] = useState('')
   const [upgradeMsgKind, setUpgradeMsgKind] = useState('success')
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null)
+  const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
 
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
 
@@ -165,7 +210,14 @@ export default function StudentDashboard() {
   useEffect(() => {
     getEvents().then(({ ok, data })    => { if (ok) setEvents(data) }).catch(() => {})
     getTrainings().then(({ ok, data }) => { if (ok) setTrainings(data) }).catch(() => {})
-    getAlumni().then(({ ok, data })    => { if (ok) setAllAlumni(data) }).catch(() => {})
+    getAlumni().then(({ ok, data })    => {
+      if (ok) {
+        setAllAlumni((data || []).map((a) => ({
+          ...a,
+          past_jobs: getAlumniPastJobs(a),
+        })))
+      }
+    }).catch(() => {})
     getStudents().then(({ ok, data })  => { if (ok) setAllStudents(data) }).catch(() => {})
     getJobs().then(({ ok, data })      => { if (ok) setJobs(data) }).catch(() => {})
     if (alumniInfo.id) {
@@ -191,6 +243,12 @@ export default function StudentDashboard() {
 
   const unreadCount = useMemo(() => notifications.filter(n => !seenKeys.has(n.key)).length, [notifications, seenKeys])
 
+  const menuUnreadCounts = useMemo(() => ({
+    events: notifications.filter((n) => n.key.startsWith('event-') && !seenKeys.has(n.key)).length,
+    jobs: notifications.filter((n) => n.key.startsWith('job-') && !seenKeys.has(n.key)).length,
+    trainings: notifications.filter((n) => n.key.startsWith('training-') && !seenKeys.has(n.key)).length,
+  }), [notifications, seenKeys])
+
   const markAllRead = () => {
     const all = new Set(notifications.map(n => n.key))
     setSeenKeys(all)
@@ -203,6 +261,32 @@ export default function StudentDashboard() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [notifOpen])
+
+  useEffect(() => {
+    const prefixByView = {
+      events: 'event-',
+      jobs: 'job-',
+      trainings: 'training-',
+    }
+    const targetPrefix = prefixByView[activeView]
+    if (!targetPrefix || notifications.length === 0) return
+
+    setSeenKeys((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      notifications.forEach((n) => {
+        if (n.key.startsWith(targetPrefix) && !next.has(n.key)) {
+          next.add(n.key)
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem(`notif_seen_${alumniInfo.id || 'guest'}`, JSON.stringify([...next]))
+        return next
+      }
+      return prev
+    })
+  }, [activeView, notifications, alumniInfo.id])
 
   const handleSubmitJob = async (e) => {
     e.preventDefault()
@@ -243,6 +327,39 @@ export default function StudentDashboard() {
         twitter:              editData.twitter,
         website:              editData.website,
       }).catch(() => {})
+    }
+  }
+
+  const handleProfilePhotoUpload = async () => {
+    if (!profilePhotoFile || !alumniInfo.id) return
+    if (profile.status !== 'approved') {
+      alert('Profile photo can be changed after approval.')
+      return
+    }
+
+    setProfilePhotoUploading(true)
+    try {
+      const { ok, data } = await updateAlumniPhoto(alumniInfo.id, profilePhotoFile)
+      if (!ok) {
+        alert(data?.message || 'Failed to update profile image.')
+        return
+      }
+
+      const nextProfile = {
+        ...profile,
+        photo_url: data?.photo_url || profile.photo_url,
+        photo: data?.photo || profile.photo,
+      }
+      setProfile(nextProfile)
+      setEditData(nextProfile)
+      localStorage.setItem('studentUser', JSON.stringify(nextProfile))
+      setProfilePhotoFile(null)
+      setAvatarLoadFailed(false)
+      alert('Profile image updated successfully.')
+    } catch (_) {
+      alert('Failed to update profile image.')
+    } finally {
+      setProfilePhotoUploading(false)
     }
   }
 
@@ -431,6 +548,11 @@ export default function StudentDashboard() {
             >
               <i className={`fa-solid ${item.icon}`}></i>
               {item.label}
+              {(item.view === 'events' || item.view === 'jobs' || item.view === 'trainings') && menuUnreadCounts[item.view] > 0 && (
+                <span style={{marginLeft:'auto',background:'#d7f4ff',color:'#0f4ea8',fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:20}}>
+                  {menuUnreadCounts[item.view] > 99 ? '99+' : menuUnreadCounts[item.view]}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -522,14 +644,14 @@ export default function StudentDashboard() {
                   </div>
                 </div>
                 <div className="ad-stat-card" style={{cursor:'pointer'}} onClick={() => setActiveView('directory')}>
-                  <div className="ad-stat-icon orange"><i className="fa-solid fa-users"></i></div>
+                  <div className="ad-stat-icon orange"><i className="fa-solid fa-user-graduate"></i></div>
                   <div className="ad-stat-info">
                     <h3>{allAlumni.length}</h3>
                     <p>Total Alumni</p>
                   </div>
                 </div>
                 <div className="ad-stat-card">
-                  <div className="ad-stat-icon blue"><i className="fa-solid fa-user-graduate"></i></div>
+                  <div className="ad-stat-icon blue"><i className="fa-solid fa-users"></i></div>
                   <div className="ad-stat-info">
                     <h3>{allStudents.length}</h3>
                     <p>Total Students</p>
@@ -789,7 +911,7 @@ export default function StudentDashboard() {
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:16,flexWrap:'wrap'}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#5f2c82,#a4508b)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <i className="fa-solid fa-users" style={{color:'white',fontSize:18}}></i>
+                    <i className="fa-solid fa-user-graduate" style={{color:'white',fontSize:18}}></i>
                   </div>
                   <div>
                     <div style={{fontSize:16,fontWeight:800,color:'#1a0035'}}>Alumni Directory</div>
@@ -844,7 +966,10 @@ export default function StudentDashboard() {
                     }}
                     onMouseEnter={e => e.currentTarget.style.background='#f5eeff'}
                     onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#fdfbff'}
-                    onClick={() => setSelectedAlumni(a)}
+                    onClick={() => setSelectedAlumni({
+                      ...a,
+                      past_jobs: getAlumniPastJobs(a),
+                    })}
                   >
                     {/* # */}
                     <div style={{textAlign:isCompactDirectory ? 'left' : 'center',fontSize:12,fontWeight:600,color:'#d0c0e8',marginBottom:isCompactDirectory ? 8 : 0}}>#{idx + 1}</div>
@@ -939,7 +1064,7 @@ export default function StudentDashboard() {
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:16,flexWrap:'wrap'}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#1a6eb5,#4aa3e0)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <i className="fa-solid fa-user-graduate" style={{color:'white',fontSize:18}}></i>
+                    <i className="fa-solid fa-users" style={{color:'white',fontSize:18}}></i>
                   </div>
                   <div>
                     <div style={{fontSize:16,fontWeight:800,color:'#1a0035'}}>Student Directory</div>
@@ -1107,6 +1232,23 @@ export default function StudentDashboard() {
                   </>
                 ) : (
                   <div className="ad-edit-form">
+                    <div className="ad-form-row">
+                      <label>Profile Image</label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                        onChange={(e) => setProfilePhotoFile(e.target.files?.[0] || null)}
+                      />
+                      <button
+                        type="button"
+                        className="ad-btn-save"
+                        onClick={handleProfilePhotoUpload}
+                        disabled={!profilePhotoFile || profilePhotoUploading || profile.status !== 'approved'}
+                        style={{marginTop:8}}
+                      >
+                        {profilePhotoUploading ? 'Uploading...' : <><i className="fa-solid fa-image"></i> Upload New Photo</>}
+                      </button>
+                    </div>
                     <div className="ad-form-row">
                       <label>Phone</label>
                       <input value={editData.phone} onChange={e => setEditData({...editData, phone: e.target.value})} />
@@ -1592,6 +1734,26 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               ))}
+
+              {selectedAlumniPastJobs.length > 0 && (
+                <div style={{marginTop:20}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'#5f2c82',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <i className="fa-solid fa-briefcase" style={{color:'#a4508b'}}></i> Past Experience
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {selectedAlumniPastJobs.map((job, idx) => (
+                      <div key={`${job.id || 'past'}-${idx}`} style={{border:'1px solid #eadcf9',borderRadius:12,padding:'10px 12px',background:'#fbf7ff'}}>
+                        <div style={{fontSize:14,fontWeight:700,color:'#123b68'}}>
+                          {job.designation || 'Role'}{job.company ? ` @ ${job.company}` : ''}
+                        </div>
+                        <div style={{fontSize:12,color:'#8668a6',marginTop:2}}>
+                          {(job.start_date || 'N/A')} - {(job.end_date || 'Present')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Research Interests */}
               {selectedAlumni.research_interests && (

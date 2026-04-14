@@ -481,7 +481,7 @@ def send_registration_received_email(name, email, user_type):
             "You will get another email once your account is approved."
         ),
         'Your registration is in review.',
-        'Open AlumniConnect'
+        'Visit AlumniConnect'
     )
 
 
@@ -588,12 +588,12 @@ def active_mail_provider():
     return 'smtp'
 
 
-def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'):
+def _build_email_html(subject, preheader, message, cta_text='Visit AlumniConnect'):
     escaped_subject = str(subject or '')
     escaped_preheader = str(preheader or '')
     escaped_body = str(message or '').replace('\n', '<br>')
-    escaped_cta = str(cta_text or 'Open AlumniConnect')
-    base_url = config.PUBLIC_BASE_URL or (config.CORS_ORIGINS[0] if config.CORS_ORIGINS else 'http://localhost:5173')
+    escaped_cta = str(cta_text or 'Visit AlumniConnect')
+    base_url = 'https://alumni-connect-ice-frontend.vercel.app'
     return f"""
     <html>
         <body style=\"margin:0;padding:0;background:#f7f2ff;font-family:Inter,Segoe UI,Arial,sans-serif;color:#2d0a50;\">
@@ -625,7 +625,7 @@ def _build_email_html(subject, preheader, message, cta_text='Open AlumniConnect'
     """
 
 
-def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniConnect'):
+def send_email(to_emails, subject, message, preheader='', cta_text='Visit AlumniConnect'):
     recipients = [e.strip() for e in (to_emails or []) if str(e).strip()]
     if not recipients:
         return {'sent': 0, 'failed': 0, 'errors': []}
@@ -1207,7 +1207,7 @@ def reset_password_with_otp():
                 "If this was not you, please contact admin immediately."
             ),
             'Your password has been changed.',
-            'Open AlumniConnect',
+            'Visit AlumniConnect',
         )
     except Exception:
         pass
@@ -1712,7 +1712,7 @@ def send_bulk_email_endpoint():
     subject = (data.get('subject') or '').strip()
     message = (data.get('message') or '').strip()
     preheader = (data.get('preheader') or '').strip()
-    cta_text = (data.get('cta_text') or '').strip() or 'Open AlumniConnect'
+    cta_text = (data.get('cta_text') or '').strip() or 'Visit AlumniConnect'
 
     if not subject:
         return jsonify({'success': False, 'message': 'Subject is required'}), 400
@@ -1794,7 +1794,36 @@ def register_for_event(eid):
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
         cur.close()
-    return jsonify({'success': True}), 201
+
+
+@app.route('/api/alumni/<int:aid>/photo', methods=['POST'])
+def update_alumni_photo(aid):
+    photo_file = request.files.get('photo')
+    if not photo_file:
+        return jsonify({'success': False, 'message': 'photo file is required'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT status FROM alumni WHERE id=%s", (aid,))
+        existing = cur.fetchone()
+        if not existing:
+            return jsonify({'success': False, 'message': 'Alumni not found'}), 404
+        if existing.get('status') != 'approved':
+            return jsonify({'success': False, 'message': 'Profile photo can be changed after approval'}), 403
+
+        filename = save_uploaded_image(photo_file)
+        if not filename:
+            return jsonify({'success': False, 'message': 'Invalid image file'}), 400
+
+        cur.execute("UPDATE alumni SET photo=%s WHERE id=%s", (filename, aid))
+        conn.commit()
+        return jsonify({'success': True, 'photo_url': build_upload_url(filename), 'photo': filename})
+    except Exception as ex:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(ex)}), 500
+    finally:
+        cur.close()
 
 
 @app.route('/api/events/<int:eid>/attendees', methods=['GET'])

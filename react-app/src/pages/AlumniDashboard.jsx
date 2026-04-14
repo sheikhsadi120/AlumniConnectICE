@@ -16,14 +16,15 @@ import {
   getFundRequests,
   getTransactions,
   addTransaction,
+  updateAlumniPhoto,
   resolveAvatarUrl,
 } from '../services/api'
 
 const sidebarItems = [
   { view: 'dashboard',    icon: 'fa-gauge',           label: 'Dashboard'    },
   { view: 'profile',      icon: 'fa-user-circle',     label: 'My Profile'   },
-  { view: 'directory',    icon: 'fa-users',           label: 'All Alumni'   },
-  { view: 'students-dir', icon: 'fa-user-graduate',   label: 'All Students' },
+  { view: 'directory',    icon: 'fa-user-graduate',   label: 'All Alumni'   },
+  { view: 'students-dir', icon: 'fa-users',           label: 'All Students' },
   { view: 'events',       icon: 'fa-calendar-days',   label: 'Events'       },
   { view: 'jobs',         icon: 'fa-briefcase',       label: 'Jobs'         },
   { view: 'trainings',    icon: 'fa-chalkboard-user', label: 'Trainings'    },
@@ -180,6 +181,8 @@ export default function AlumniDashboard() {
   const [fundSubmittingFor, setFundSubmittingFor] = useState(null)
   const [fundFormByRequest, setFundFormByRequest] = useState({})
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null)
+  const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
@@ -307,6 +310,12 @@ export default function AlumniDashboard() {
 
   const unreadCount = useMemo(() => notifications.filter(n => !seenKeys.has(n.key)).length, [notifications, seenKeys])
 
+  const menuUnreadCounts = useMemo(() => ({
+    events: notifications.filter((n) => n.key.startsWith('event-') && !seenKeys.has(n.key)).length,
+    jobs: notifications.filter((n) => n.key.startsWith('job-') && !seenKeys.has(n.key)).length,
+    trainings: notifications.filter((n) => n.key.startsWith('training-') && !seenKeys.has(n.key)).length,
+  }), [notifications, seenKeys])
+
   const markAllRead = () => {
     const all = new Set(notifications.map(n => n.key))
     setSeenKeys(all)
@@ -319,6 +328,32 @@ export default function AlumniDashboard() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [notifOpen])
+
+  useEffect(() => {
+    const prefixByView = {
+      events: 'event-',
+      jobs: 'job-',
+      trainings: 'training-',
+    }
+    const targetPrefix = prefixByView[activeView]
+    if (!targetPrefix || notifications.length === 0) return
+
+    setSeenKeys((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      notifications.forEach((n) => {
+        if (n.key.startsWith(targetPrefix) && !next.has(n.key)) {
+          next.add(n.key)
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem(`notif_seen_${alumniInfo.id || 'guest'}`, JSON.stringify([...next]))
+        return next
+      }
+      return prev
+    })
+  }, [activeView, notifications, alumniInfo.id])
 
   const handleSubmitJob = async (e) => {
     e.preventDefault()
@@ -387,6 +422,39 @@ export default function AlumniDashboard() {
         website:              nextProfile.website,
         past_jobs:            nextProfile.past_jobs,
       }).catch(() => {})
+    }
+  }
+
+  const handleProfilePhotoUpload = async () => {
+    if (!profilePhotoFile || !alumniInfo.id) return
+    if (profile.status !== 'approved') {
+      alert('Profile photo can be changed after approval.')
+      return
+    }
+
+    setProfilePhotoUploading(true)
+    try {
+      const { ok, data } = await updateAlumniPhoto(alumniInfo.id, profilePhotoFile)
+      if (!ok) {
+        alert(data?.message || 'Failed to update profile image.')
+        return
+      }
+
+      const nextProfile = {
+        ...profile,
+        photo_url: data?.photo_url || profile.photo_url,
+        photo: data?.photo || profile.photo,
+      }
+      setProfile(nextProfile)
+      setEditData(nextProfile)
+      localStorage.setItem('alumniUser', JSON.stringify(nextProfile))
+      setProfilePhotoFile(null)
+      setAvatarLoadFailed(false)
+      alert('Profile image updated successfully.')
+    } catch (_) {
+      alert('Failed to update profile image.')
+    } finally {
+      setProfilePhotoUploading(false)
     }
   }
 
@@ -575,6 +643,11 @@ export default function AlumniDashboard() {
             >
               <i className={`fa-solid ${item.icon}`}></i>
               {item.label}
+              {(item.view === 'events' || item.view === 'jobs' || item.view === 'trainings') && menuUnreadCounts[item.view] > 0 && (
+                <span style={{marginLeft:'auto',background:'#d7f4ff',color:'#0f4ea8',fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:20}}>
+                  {menuUnreadCounts[item.view] > 99 ? '99+' : menuUnreadCounts[item.view]}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -666,14 +739,14 @@ export default function AlumniDashboard() {
                   </div>
                 </div>
                 <div className="ad-stat-card" style={{cursor:'pointer'}} onClick={() => setActiveView('directory')}>
-                  <div className="ad-stat-icon orange"><i className="fa-solid fa-users"></i></div>
+                  <div className="ad-stat-icon orange"><i className="fa-solid fa-user-graduate"></i></div>
                   <div className="ad-stat-info">
                     <h3>{allAlumni.length}</h3>
                     <p>Total Alumni</p>
                   </div>
                 </div>
                 <div className="ad-stat-card">
-                  <div className="ad-stat-icon blue"><i className="fa-solid fa-user-graduate"></i></div>
+                  <div className="ad-stat-icon blue"><i className="fa-solid fa-users"></i></div>
                   <div className="ad-stat-info">
                     <h3>{allStudents.length}</h3>
                     <p>Total Students</p>
@@ -790,7 +863,7 @@ export default function AlumniDashboard() {
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:16,flexWrap:'wrap'}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#0f4ea8,#00a3a3)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <i className="fa-solid fa-users" style={{color:'white',fontSize:18}}></i>
+                    <i className="fa-solid fa-user-graduate" style={{color:'white',fontSize:18}}></i>
                   </div>
                   <div>
                     <div style={{fontSize:16,fontWeight:800,color:'#1a0035'}}>Alumni Directory</div>
@@ -943,7 +1016,7 @@ export default function AlumniDashboard() {
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:16,flexWrap:'wrap'}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:44,height:44,borderRadius:12,background:'linear-gradient(135deg,#1a6eb5,#4aa3e0)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <i className="fa-solid fa-user-graduate" style={{color:'white',fontSize:18}}></i>
+                    <i className="fa-solid fa-users" style={{color:'white',fontSize:18}}></i>
                   </div>
                   <div>
                     <div style={{fontSize:16,fontWeight:800,color:'#1a0035'}}>Student Directory</div>
@@ -1127,6 +1200,23 @@ export default function AlumniDashboard() {
                   </>
                 ) : (
                   <div className="ad-edit-form">
+                    <div className="ad-form-row">
+                      <label>Profile Image</label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                        onChange={(e) => setProfilePhotoFile(e.target.files?.[0] || null)}
+                      />
+                      <button
+                        type="button"
+                        className="ad-btn-save"
+                        onClick={handleProfilePhotoUpload}
+                        disabled={!profilePhotoFile || profilePhotoUploading || profile.status !== 'approved'}
+                        style={{marginTop:8}}
+                      >
+                        {profilePhotoUploading ? 'Uploading...' : <><i className="fa-solid fa-image"></i> Upload New Photo</>}
+                      </button>
+                    </div>
                     <div className="ad-form-row">
                       <label>Phone</label>
                       <input value={editData.phone} onChange={e => setEditData({...editData, phone: e.target.value})} />
