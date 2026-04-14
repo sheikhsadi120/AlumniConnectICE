@@ -654,11 +654,9 @@ def send_email(to_emails, subject, message, preheader='', cta_text='Open AlumniC
             total_failed += smtp_result.get('failed', 0)
             all_errors.extend(smtp_result.get('errors', []))
         else:
-            total_failed += len(forced_smtp_recipients)
-            all_errors.extend([
-                {'email': email, 'error': 'SMTP fallback required for this domain but SMTP is not configured'}
-                for email in forced_smtp_recipients
-            ])
+            # Keep delivery available in production even when SMTP isn't configured yet.
+            # These recipients will be attempted via the provider/fallback path below.
+            regular_recipients.extend(forced_smtp_recipients)
 
     if regular_recipients:
         if provider == 'brevo':
