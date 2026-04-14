@@ -100,9 +100,9 @@ async function request(path, options = {}) {
         data = { success: false, message: `Server error (HTTP ${res.status})` };
       }
 
-      // In local dev, a bad base (e.g. Vite origin/api) returns HTML 404.
-      // Retry with next candidate before surfacing an error.
-      if (!res.ok && res.status === 404 && !isJsonResponse) {
+      // A wrong base (for example frontend origin `/api`) often returns non-JSON
+      // framework errors like 404/405/500. Try the next candidate in that case.
+      if (!res.ok && !isJsonResponse) {
         lastHttpResult = { status: res.status, data };
         continue;
       }
