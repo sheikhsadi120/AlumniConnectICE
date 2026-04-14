@@ -44,15 +44,45 @@ const titles = {
 }
 
 const normalizePastJobs = (jobs = []) => {
-  if (!Array.isArray(jobs)) return []
-  return jobs
+  let source = jobs
+
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source)
+    } catch (_) {
+      source = []
+    }
+  }
+
+  if (source && !Array.isArray(source) && typeof source === 'object') {
+    source = source.past_jobs || source.jobs || source.items || []
+  }
+
+  if (!Array.isArray(source)) return []
+
+  return source
     .map((j) => ({
-      company: (j?.company || '').trim(),
-      designation: (j?.designation || '').trim(),
-      start_date: j?.start_date || '',
-      end_date: j?.end_date || '',
+      company: String(j?.company || j?.company_name || j?.organization || j?.org || '').trim(),
+      designation: String(j?.designation || j?.role || j?.title || j?.position || '').trim(),
+      start_date: j?.start_date || j?.startDate || j?.from || '',
+      end_date: j?.end_date || j?.endDate || j?.to || '',
     }))
     .filter((j) => j.company || j.designation)
+}
+
+const getAlumniPastJobs = (alumni) => {
+  const normalized = normalizePastJobs(alumni?.past_jobs)
+  if (normalized.length > 0) return normalized
+
+  // Backward-compatibility with legacy single-entry fields.
+  return normalizePastJobs([
+    {
+      company: alumni?.past_company || alumni?.previous_company || '',
+      designation: alumni?.past_designation || alumni?.previous_designation || '',
+      start_date: alumni?.past_job_start_date || alumni?.previous_job_start_date || '',
+      end_date: alumni?.past_job_end_date || alumni?.previous_job_end_date || '',
+    },
+  ])
 }
 
 const samePastJob = (a, b) => (
@@ -152,6 +182,7 @@ export default function AlumniDashboard() {
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
 
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
 
@@ -185,7 +216,14 @@ export default function AlumniDashboard() {
   useEffect(() => {
     getEvents().then(({ ok, data })    => { if (ok) setEvents(data) }).catch(() => {})
     getTrainings().then(({ ok, data }) => { if (ok) setTrainings(data) }).catch(() => {})
-    getAlumni().then(({ ok, data })    => { if (ok) setAllAlumni(data) }).catch(() => {})
+    getAlumni().then(({ ok, data })    => {
+      if (ok) {
+        setAllAlumni((data || []).map((a) => ({
+          ...a,
+          past_jobs: getAlumniPastJobs(a),
+        })))
+      }
+    }).catch(() => {})
     getStudents().then(({ ok, data })  => { if (ok) setAllStudents(data) }).catch(() => {})
     getJobs().then(({ ok, data })      => { if (ok) setJobs(data) }).catch(() => {})
     getFundRequests({ status: 'open' }).then(({ ok, data }) => { if (ok) setFundRequests(data) }).catch(() => {})
@@ -807,7 +845,10 @@ export default function AlumniDashboard() {
                     }}
                     onMouseEnter={e => e.currentTarget.style.background='#f5eeff'}
                     onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#fdfbff'}
-                    onClick={() => setSelectedAlumni(a)}
+                    onClick={() => setSelectedAlumni({
+                      ...a,
+                      past_jobs: getAlumniPastJobs(a),
+                    })}
                   >
                     {/* # */}
                     <div style={{textAlign:isCompactDirectory ? 'left' : 'center',fontSize:12,fontWeight:600,color:'#d0c0e8',marginBottom:isCompactDirectory ? 8 : 0}}>#{idx + 1}</div>
@@ -1772,13 +1813,13 @@ export default function AlumniDashboard() {
                 </div>
               ))}
 
-              {Array.isArray(selectedAlumni.past_jobs) && selectedAlumni.past_jobs.length > 0 && (
+              {selectedAlumniPastJobs.length > 0 && (
                 <div style={{marginTop:20}}>
                   <div style={{fontSize:12,fontWeight:700,color:'#0f4ea8',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
                     <i className="fa-solid fa-briefcase" style={{color:'#00a3a3'}}></i> Past Experience
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                    {selectedAlumni.past_jobs.map((job, idx) => (
+                    {selectedAlumniPastJobs.map((job, idx) => (
                       <div key={`${job.id || 'past'}-${idx}`} style={{border:'1px solid #eadcf9',borderRadius:12,padding:'10px 12px',background:'#fbf7ff'}}>
                         <div style={{fontSize:14,fontWeight:700,color:'#123b68'}}>
                           {job.designation || 'Role'}{job.company ? ` @ ${job.company}` : ''}
