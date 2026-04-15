@@ -1864,6 +1864,8 @@ def register_for_event(eid):
     finally:
         cur.close()
 
+    return jsonify({'success': True, 'message': 'Registration successful'}), 201
+
 
 @app.route('/api/alumni/<int:aid>/photo', methods=['POST'])
 def update_alumni_photo(aid):
