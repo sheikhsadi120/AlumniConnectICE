@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://alumni-connect-ice-lemon.vercel.app/api/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

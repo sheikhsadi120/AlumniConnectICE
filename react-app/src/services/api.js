@@ -107,6 +107,14 @@ async function request(path, options = {}) {
         continue;
       }
 
+      // Some platforms return JSON for unsupported methods/routes (for example 405).
+      // If that happens on a same-origin inferred base, try the next API candidate.
+      const isSameOriginInferredBase = typeof window !== 'undefined' && baseUrl === `${window.location.origin}/api`;
+      if (!res.ok && isSameOriginInferredBase && (res.status === 404 || res.status === 405)) {
+        lastHttpResult = { status: res.status, data };
+        continue;
+      }
+
       activeBaseUrl = baseUrl;
       return { ok: res.ok, status: res.status, data };
     } catch (error) {
