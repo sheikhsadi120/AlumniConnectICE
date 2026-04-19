@@ -200,8 +200,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     const lockState = { dashboardLock: true, role: 'admin' }
     const dashboardPath = '/admin-dashboard'
-    const loginPath = '/admin-login'
-    window.history.replaceState({ dashboardSeed: true, role: 'admin', view: 'login' }, '', loginPath)
+    const homePath = '/'
+    window.history.replaceState({ dashboardSeed: true, role: 'admin', view: 'home' }, '', homePath)
     window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {

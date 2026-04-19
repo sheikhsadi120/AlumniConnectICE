@@ -226,8 +226,8 @@ export default function AlumniDashboard() {
   useEffect(() => {
     const lockState = { dashboardLock: true, role: 'alumni' }
     const dashboardPath = '/alumni-dashboard'
-    const loginPath = '/alumni-login'
-    window.history.replaceState({ dashboardSeed: true, role: 'alumni', view: 'login' }, '', loginPath)
+    const homePath = '/'
+    window.history.replaceState({ dashboardSeed: true, role: 'alumni', view: 'home' }, '', homePath)
     window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
