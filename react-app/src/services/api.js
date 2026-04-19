@@ -158,6 +158,13 @@ export const approveAlumni   = (id)      => request(`/approve/${id}`,  { method:
 export const rejectAlumni    = (id)      => request(`/reject/${id}`,   { method:'POST' });
 export const getPending      = ()        => request('/pending');
 
+// ── Alumni Referrals ─────────────────────────────────
+export const createReferral = (payload) => request('/referrals', { method:'POST', body: JSON.stringify(payload) });
+export const getReferralsByAlumni = (alumniId) => request(`/referrals?alumni_id=${encodeURIComponent(alumniId)}`);
+export const getPendingReferrals = () => request('/referrals/pending');
+export const approveReferral = (id) => request(`/referrals/${id}/approve`, { method:'POST' });
+export const rejectReferral = (id, admin_note='') => request(`/referrals/${id}/reject`, { method:'POST', body: JSON.stringify({ admin_note }) });
+
 // ── Alumni Membership Upgrade ─────────────────────────
 export const requestUpgrade = (id, payload) => {
   // payload can be JSON-friendly object or FormData when document upload is included.

@@ -317,6 +317,26 @@ def ensure_db_migrations():
                 file_data     LONGBLOB NOT NULL,
                 created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
+            """CREATE TABLE IF NOT EXISTS alumni_referrals (
+                id                      INT AUTO_INCREMENT PRIMARY KEY,
+                referred_by_alumni_id   INT NOT NULL,
+                referred_name           VARCHAR(120) NOT NULL,
+                referred_email          VARCHAR(150) NOT NULL,
+                referred_phone          VARCHAR(30) DEFAULT NULL,
+                referred_student_id     VARCHAR(30) DEFAULT NULL,
+                referred_session        VARCHAR(20) DEFAULT NULL,
+                referred_department     VARCHAR(50) DEFAULT 'ICE',
+                relation_note           VARCHAR(255) DEFAULT NULL,
+                status                  ENUM('pending','approved','rejected') DEFAULT 'pending',
+                admin_note              VARCHAR(255) DEFAULT NULL,
+                reviewed_by             VARCHAR(60) DEFAULT NULL,
+                reviewed_at             DATETIME DEFAULT NULL,
+                created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (referred_by_alumni_id) REFERENCES alumni(id) ON DELETE CASCADE,
+                INDEX idx_referral_pending (status, created_at),
+                INDEX idx_referral_email (referred_email),
+                INDEX idx_referral_student_id (referred_student_id)
+            )""",
         ]
         
         for stmt in create_stmts:
@@ -534,6 +554,35 @@ def send_registration_received_email(name, email, user_type):
         ),
         'Your registration is in review.',
         'Visit AlumniConnect'
+    )
+
+
+def send_existing_alumni_activation_email(name, email):
+    send_email(
+        [email],
+        'Welcome to AlumniConnect - Your account is now active',
+        (
+            f"Hi {name or 'there'},\n\n"
+            "Your registration matched our existing alumni record. "
+            "Your account is now active and moved to All Alumni.\n\n"
+            "Please login to continue."
+        ),
+        'Your account is active and ready to use.',
+        'Login to AlumniConnect'
+    )
+
+
+def send_referral_invitation_email(name, email):
+    send_email(
+        [email],
+        'You are referred for joining AlumniConnect',
+        (
+            f"Hi {name or 'there'},\n\n"
+            "You are referred for joining and connecting with all ICE alumni and students. "
+            "Please open AlumniConnect and register your account."
+        ),
+        'You have a new AlumniConnect referral invitation.',
+        'Open AlumniConnect'
     )
 
 
@@ -1314,19 +1363,27 @@ def register():
     idcard_filename = save_uploaded_image(idcard_file)
 
     email = (data.get('email') or '').strip()
+    student_id = (data.get('student_id') or '').strip()
     hashed = generate_password_hash(data['password'])
     user_type = data.get('user_type', 'alumni')
     conn = get_db()
     cur = conn.cursor()
     try:
-        # If this email already exists in admin's "Existing Alumni" list,
-        # reuse that row as the user's real registration and move it to pending review.
+        # If an admin-added "Existing Alumni" row matches by email or student ID,
+        # convert it to a real active account and move directly to All Alumni.
         cur.execute(
-            "SELECT id, is_manually_added FROM alumni WHERE LOWER(email)=LOWER(%s) LIMIT 1",
-            (email,)
+            """
+            SELECT id, is_manually_added
+            FROM alumni
+            WHERE is_manually_added=1
+              AND (LOWER(email)=LOWER(%s) OR (%s <> '' AND student_id=%s))
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (email, student_id, student_id),
         )
         existing = cur.fetchone()
-        if existing and int(existing.get('is_manually_added') or 0) == 1:
+        if existing:
             cur.execute(
                 """
                 UPDATE alumni
@@ -1342,8 +1399,9 @@ def register():
                        password=%s,
                        photo=CASE WHEN %s IS NULL THEN photo ELSE %s END,
                        id_photo=CASE WHEN %s IS NULL THEN id_photo ELSE %s END,
-                       status='pending',
+                         status='approved',
                        user_type=%s,
+                         is_manually_added=0,
                        upgrade_request=NULL,
                        upgrade_document=NULL
                  WHERE id=%s
@@ -1363,13 +1421,13 @@ def register():
             conn.commit()
             warning = None
             try:
-                send_registration_received_email(data.get('name'), email, user_type)
+                send_existing_alumni_activation_email(data.get('name'), email)
             except Exception as ex:
                 warning = str(ex)
             return jsonify({
                 'success': True,
                 'id': existing['id'],
-                'message': 'Registration submitted. Waiting for admin approval.',
+                'message': 'Registration completed. Your account is now active.',
                 'email_warning': warning,
             }), 201
 
@@ -1600,6 +1658,258 @@ def reject(aid):
     cur.execute("UPDATE alumni SET status='rejected' WHERE id=%s", (aid,))
     conn.commit()
     cur.close()
+    return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════════════
+#  ALUMNI REFERRALS
+# ═══════════════════════════════════════════════════════
+
+@app.route('/api/referrals', methods=['POST'])
+def create_referral():
+    data = request.get_json() or {}
+    referred_by_alumni_id = data.get('referred_by_alumni_id')
+    referred_name = (data.get('referred_name') or '').strip()
+    referred_email = (data.get('referred_email') or '').strip().lower()
+    referred_phone = (data.get('referred_phone') or '').strip() or None
+    referred_student_id = (data.get('referred_student_id') or '').strip() or None
+    referred_session = (data.get('referred_session') or '').strip() or None
+    referred_department = (data.get('referred_department') or 'ICE').strip() or 'ICE'
+    relation_note = (data.get('relation_note') or '').strip() or None
+
+    if not referred_by_alumni_id or not referred_name or not referred_email:
+        return jsonify({'success': False, 'message': 'referred_by_alumni_id, referred_name and referred_email are required.'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id FROM alumni
+            WHERE id=%s AND status='approved' AND (user_type IS NULL OR user_type='alumni')
+            LIMIT 1
+            """,
+            (referred_by_alumni_id,),
+        )
+        referrer = cur.fetchone()
+        if not referrer:
+            return jsonify({'success': False, 'message': 'Only approved alumni can submit referrals.'}), 403
+
+        cur.execute(
+            """
+            SELECT id
+            FROM alumni_referrals
+            WHERE status='pending'
+              AND (LOWER(referred_email)=LOWER(%s) OR (%s IS NOT NULL AND referred_student_id=%s))
+            LIMIT 1
+            """,
+            (referred_email, referred_student_id, referred_student_id),
+        )
+        if cur.fetchone():
+            return jsonify({'success': False, 'message': 'A pending referral already exists for this person.'}), 409
+
+        cur.execute(
+            """
+            INSERT INTO alumni_referrals
+            (referred_by_alumni_id, referred_name, referred_email, referred_phone, referred_student_id,
+             referred_session, referred_department, relation_note, status)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+            """,
+            (
+                referred_by_alumni_id,
+                referred_name,
+                referred_email,
+                referred_phone,
+                referred_student_id,
+                referred_session,
+                referred_department,
+                relation_note,
+            ),
+        )
+        conn.commit()
+        referral_id = cur.lastrowid
+        return jsonify({'success': True, 'id': referral_id, 'message': 'Referral submitted for admin approval.'}), 201
+    except Exception as ex:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(ex)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/api/referrals', methods=['GET'])
+def get_referrals_for_alumni():
+    alumni_id = request.args.get('alumni_id', type=int)
+    if not alumni_id:
+        return jsonify({'success': False, 'message': 'alumni_id is required.'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, referred_name, referred_email, referred_phone, referred_student_id,
+               referred_session, referred_department, relation_note, status, admin_note,
+               reviewed_at, created_at
+        FROM alumni_referrals
+        WHERE referred_by_alumni_id=%s
+        ORDER BY created_at DESC, id DESC
+        """,
+        (alumni_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    for r in rows:
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+        if r.get('reviewed_at'):
+            r['reviewed_at'] = str(r['reviewed_at'])
+    return jsonify(rows)
+
+
+@app.route('/api/referrals/pending', methods=['GET'])
+def get_pending_referrals():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT r.id, r.referred_name, r.referred_email, r.referred_phone,
+               r.referred_student_id, r.referred_session, r.referred_department,
+               r.relation_note, r.status, r.created_at,
+               a.id AS referrer_id, a.name AS referrer_name, a.email AS referrer_email
+        FROM alumni_referrals r
+        LEFT JOIN alumni a ON a.id = r.referred_by_alumni_id
+        WHERE r.status='pending'
+        ORDER BY r.created_at DESC, r.id DESC
+        """
+    )
+    rows = cur.fetchall()
+    cur.close()
+    for r in rows:
+        if r.get('created_at'):
+            r['created_at'] = str(r['created_at'])
+    return jsonify(rows)
+
+
+@app.route('/api/referrals/<int:referral_id>/approve', methods=['POST'])
+def approve_referral(referral_id):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, referred_name, referred_email, referred_phone, referred_student_id,
+                   referred_session, referred_department
+            FROM alumni_referrals
+            WHERE id=%s AND status='pending'
+            LIMIT 1
+            """,
+            (referral_id,),
+        )
+        referral = cur.fetchone()
+        if not referral:
+            return jsonify({'success': False, 'message': 'Pending referral not found.'}), 404
+
+        student_id = (referral.get('referred_student_id') or '').strip()
+        cur.execute(
+            """
+            SELECT id, is_manually_added
+            FROM alumni
+            WHERE LOWER(email)=LOWER(%s) OR (%s <> '' AND student_id=%s)
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (referral['referred_email'], student_id, student_id),
+        )
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute(
+                """
+                UPDATE alumni
+                SET name=%s,
+                    email=%s,
+                    phone=%s,
+                    student_id=%s,
+                    session=%s,
+                    department=%s,
+                    status='approved',
+                    user_type='alumni',
+                    is_manually_added=1
+                WHERE id=%s
+                """,
+                (
+                    referral['referred_name'],
+                    referral['referred_email'],
+                    referral.get('referred_phone'),
+                    referral.get('referred_student_id'),
+                    referral.get('referred_session'),
+                    referral.get('referred_department') or 'ICE',
+                    existing['id'],
+                ),
+            )
+        else:
+            dummy_password = generate_password_hash('ADMIN_ADDED_' + str(uuid.uuid4())[:8])
+            cur.execute(
+                """
+                INSERT INTO alumni (name, email, phone, student_id, session, department,
+                                    password, status, user_type, is_manually_added)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,'approved','alumni',1)
+                """,
+                (
+                    referral['referred_name'],
+                    referral['referred_email'],
+                    referral.get('referred_phone'),
+                    referral.get('referred_student_id'),
+                    referral.get('referred_session'),
+                    referral.get('referred_department') or 'ICE',
+                    dummy_password,
+                ),
+            )
+
+        cur.execute(
+            """
+            UPDATE alumni_referrals
+            SET status='approved', reviewed_by='admin', reviewed_at=NOW()
+            WHERE id=%s
+            """,
+            (referral_id,),
+        )
+        conn.commit()
+    except Exception as ex:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(ex)}), 500
+    finally:
+        cur.close()
+
+    warning = None
+    try:
+        send_referral_invitation_email(referral.get('referred_name'), referral.get('referred_email'))
+    except Exception as ex:
+        warning = str(ex)
+
+    return jsonify({'success': True, 'email_warning': warning})
+
+
+@app.route('/api/referrals/<int:referral_id>/reject', methods=['POST'])
+def reject_referral(referral_id):
+    data = request.get_json(silent=True) or {}
+    admin_note = (data.get('admin_note') or '').strip() or None
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE alumni_referrals
+        SET status='rejected', admin_note=%s, reviewed_by='admin', reviewed_at=NOW()
+        WHERE id=%s AND status='pending'
+        """,
+        (admin_note, referral_id),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    cur.close()
+
+    if changed == 0:
+        return jsonify({'success': False, 'message': 'Pending referral not found.'}), 404
     return jsonify({'success': True})
 
 

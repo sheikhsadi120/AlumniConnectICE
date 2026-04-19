@@ -19,6 +19,7 @@ import {
   getEventAttendees,
   getTrainingAttendees,
   getUpgradeRequests, approveUpgrade, rejectUpgrade,
+  getPendingReferrals, approveReferral, rejectReferral,
   updateEvent,
   sendAdminEmail,
   getEmailLogs,
@@ -76,6 +77,7 @@ export default function AdminDashboard() {
   const [pendingJobs,  setPendingJobs]  = useState([])
   const [existingLists, setExistingLists] = useState([])
   const [upgradeRequests, setUpgradeRequests] = useState([])
+  const [pendingReferrals, setPendingReferrals] = useState([])
   const [stats,        setStats]        = useState({ total_alumni:0, total_students:0, pending:0, events:0, total_funds:0, total_jobs:0 })
   const [loading,      setLoading]      = useState(true)
   const [menuSeenKeys, setMenuSeenKeys] = useState(() => {
@@ -146,12 +148,13 @@ export default function AdminDashboard() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [pd, al, st, ev, tx, fr, tr, jb, stats_, pj, ur, el, ea] = await Promise.all([
+      const [pd, al, st, ev, tx, fr, tr, jb, stats_, pj, ur, el, ea, pr] = await Promise.all([
         getPending(), getAlumni(), getStudents(), getEvents(),
         getTransactions(), getFundRequests({ status: 'open' }), getTrainings(), getJobs(), getStats(), getPendingJobs(),
         getUpgradeRequests(),
         getExistingLists(),
         getExistAlumni(),
+        getPendingReferrals(),
       ])
       if (pd.ok) setPending(normalizePeople(pd.data))
       if (al.ok) setAlumni(normalizePeople(al.data))
@@ -166,6 +169,7 @@ export default function AdminDashboard() {
       if (ur.ok) setUpgradeRequests(normalizePeople(ur.data))
       if (el.ok) setExistingLists(el.data)
       if (ea.ok) setExistAlumni(ea.data)
+      if (pr.ok) setPendingReferrals(Array.isArray(pr.data) ? pr.data : [])
     } catch (_) {}
     setLoading(false)
   }, [normalizePeople])
@@ -234,6 +238,22 @@ export default function AdminDashboard() {
     const { ok } = await rejectUpgrade(id)
     if (ok) {
       setUpgradeRequests(prev => prev.filter(u => u.id !== id))
+    }
+  }
+
+  const handleApproveReferral = async (id) => {
+    const { ok } = await approveReferral(id)
+    if (ok) {
+      setPendingReferrals(prev => prev.filter(r => r.id !== id))
+      const { ok: eaOk, data: eaData } = await getExistAlumni()
+      if (eaOk) setExistAlumni(Array.isArray(eaData) ? eaData : [])
+    }
+  }
+
+  const handleRejectReferral = async (id) => {
+    const { ok } = await rejectReferral(id)
+    if (ok) {
+      setPendingReferrals(prev => prev.filter(r => r.id !== id))
     }
   }
 
@@ -725,7 +745,7 @@ export default function AdminDashboard() {
 
   const navItems = [
     { view:'dashboard',    icon:'fa-gauge-high',      label:'Dashboard',          section:'Main Menu' },
-    { view:'pending',      icon:'fa-clock',            label:'Pending Approvals',  badge: pending.length, section:null },
+    { view:'pending',      icon:'fa-clock',            label:'Pending Approvals',  badge: pending.length + pendingReferrals.length, section:null },
     { view:'alumni',       icon:'fa-user-graduate',    label:'All Alumni',         section:null },
     { view:'students',     icon:'fa-users',            label:'All Students',       section:null },
     { view:'events',       icon:'fa-calendar-days',   label:'Events',             badge: menuUnreadCounts.events, section:null },
@@ -897,6 +917,7 @@ export default function AdminDashboard() {
             <PendingSection
               pending={pending}
               upgradeRequests={upgradeRequests}
+              pendingReferrals={pendingReferrals}
               pendingTab={pendingTab}
               setPendingTab={setPendingTab}
               searchQuery={searchQuery}
@@ -905,6 +926,8 @@ export default function AdminDashboard() {
               onReject={handleReject}
               onApproveUpgrade={handleApproveUpgrade}
               onRejectUpgrade={handleRejectUpgrade}
+              onApproveReferral={handleApproveReferral}
+              onRejectReferral={handleRejectReferral}
             />
           )}
           {activeView === 'alumni' && (
@@ -2252,12 +2275,18 @@ export default function AdminDashboard() {
   )
 }
 
-function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingTab, searchQuery, searchField, onApprove, onReject, onApproveUpgrade, onRejectUpgrade }) {
+function PendingSection({ pending, upgradeRequests = [], pendingReferrals = [], pendingTab, setPendingTab, searchQuery, searchField, onApprove, onReject, onApproveUpgrade, onRejectUpgrade, onApproveReferral, onRejectReferral }) {
   const alumniPending  = pending.filter(p => (p.user_type || 'alumni') === 'alumni')
   const studentPending = pending.filter(p => p.user_type === 'student')
-  const rows = (pendingTab === 'alumni' ? alumniPending : pendingTab === 'student' ? studentPending : upgradeRequests).filter(p => {
-    if (!searchQuery.trim()) return true
-    return String(p[searchField] ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase())
+  const rows = (pendingTab === 'alumni' ? alumniPending : pendingTab === 'student' ? studentPending : pendingTab === 'upgrade' ? upgradeRequests : pendingReferrals).filter(p => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return true
+    return (
+      String(p[searchField] ?? '').toLowerCase().includes(q)
+      || String(p.referred_name ?? '').toLowerCase().includes(q)
+      || String(p.referred_email ?? '').toLowerCase().includes(q)
+      || String(p.referrer_name ?? '').toLowerCase().includes(q)
+    )
   })
   return (
     <>
@@ -2320,18 +2349,66 @@ function PendingSection({ pending, upgradeRequests = [], pendingTab, setPendingT
             borderRadius:20, padding:'1px 9px', fontSize:12, fontWeight:700
           }}>{upgradeRequests.length}</span>
         </button>
+        <button
+          onClick={() => setPendingTab('referral')}
+          style={{
+            display:'flex', alignItems:'center', gap:8,
+            padding:'10px 22px', borderRadius:12, fontWeight:700, fontSize:14,
+            cursor:'pointer', fontFamily:'Inter,sans-serif', border:'none',
+            background: pendingTab === 'referral' ? 'linear-gradient(135deg,#0f4ea8,#00a3a3)' : '#f0eaff',
+            color: pendingTab === 'referral' ? 'white' : '#0f4ea8',
+            boxShadow: pendingTab === 'referral' ? '0 4px 14px rgba(95,44,130,0.3)' : 'none',
+            transition:'0.2s',
+          }}
+        >
+          <i className="fa-solid fa-user-plus"></i> Alumni Referrals
+          <span style={{
+            background: pendingTab === 'referral' ? 'rgba(255,255,255,0.25)' : '#d4b8f0',
+            color: pendingTab === 'referral' ? 'white' : '#0f4ea8',
+            borderRadius:20, padding:'1px 9px', fontSize:12, fontWeight:700
+          }}>{pendingReferrals.length}</span>
+        </button>
       </div>
 
       <div className="section-title">
         <i className="fa-solid fa-clock" style={{color:'#00a3a3'}}></i>
-        {pendingTab === 'alumni' ? 'Alumni' : pendingTab === 'student' ? 'Student' : 'Alumni Upgrade'} Pending Approvals
+        {pendingTab === 'alumni' ? 'Alumni' : pendingTab === 'student' ? 'Student' : pendingTab === 'upgrade' ? 'Alumni Upgrade' : 'Referral'} Pending Approvals
         <span className="badge-count">{rows.length}</span>
       </div>
       {pendingTab === 'upgrade'
         ? <UpgradeCards rows={rows} onApprove={onApproveUpgrade} onReject={onRejectUpgrade} />
-        : <PendingCards rows={rows} onApprove={onApprove} onReject={onReject} />
+        : pendingTab === 'referral'
+          ? <ReferralCards rows={rows} onApprove={onApproveReferral} onReject={onRejectReferral} />
+          : <PendingCards rows={rows} onApprove={onApprove} onReject={onReject} />
       }
     </>
+  )
+}
+
+function ReferralCards({ rows, onApprove, onReject }) {
+  if (rows.length === 0) return (
+    <div className="admin-table-wrap">
+      <div className="empty-state"><i className="fa-solid fa-circle-check"></i><p>No pending referrals.</p></div>
+    </div>
+  )
+
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))', gap:20}}>
+      {rows.map((r) => (
+        <div key={r.id} style={{background:'#fff', borderRadius:16, border:'1px solid #e8f2ff', boxShadow:'0 2px 10px rgba(0,0,0,0.06)', padding:18}}>
+          <h4 style={{margin:'0 0 8px 0', color:'#0f4ea8'}}>{r.referred_name}</h4>
+          <p style={{margin:'0 0 5px 0', fontSize:13, color:'#555'}}><strong>Email:</strong> {r.referred_email}</p>
+          <p style={{margin:'0 0 5px 0', fontSize:13, color:'#555'}}><strong>Student ID:</strong> {r.referred_student_id || '-'}</p>
+          <p style={{margin:'0 0 5px 0', fontSize:13, color:'#555'}}><strong>Session:</strong> {r.referred_session || '-'}</p>
+          <p style={{margin:'0 0 5px 0', fontSize:13, color:'#555'}}><strong>Referrer:</strong> {r.referrer_name || '-'} ({r.referrer_email || '-'})</p>
+          {r.relation_note && <p style={{margin:'0 0 10px 0', fontSize:13, color:'#666'}}><strong>Note:</strong> {r.relation_note}</p>}
+          <div className="event-actions" style={{marginTop:10}}>
+            <button className="btn-approve" onClick={() => onApprove(r.id)}><i className="fa-solid fa-check"></i> Approve</button>
+            <button className="btn-delete" onClick={() => onReject(r.id)}><i className="fa-solid fa-xmark"></i> Reject</button>
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 

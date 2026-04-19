@@ -18,6 +18,8 @@ import {
   addTransaction,
   updateAlumniPhoto,
   resolveAvatarUrl,
+  createReferral,
+  getReferralsByAlumni,
 } from '../services/api'
 
 const sidebarItems = [
@@ -28,6 +30,7 @@ const sidebarItems = [
   { view: 'events',       icon: 'fa-calendar-days',   label: 'Events'       },
   { view: 'jobs',         icon: 'fa-briefcase',       label: 'Jobs'         },
   { view: 'trainings',    icon: 'fa-chalkboard-user', label: 'Trainings'    },
+  { view: 'refer-alumni', icon: 'fa-user-plus',       label: 'Refer Alumni' },
   { view: 'membership',   icon: 'fa-id-card',         label: 'Membership'   },
   { view: 'fund-transaction', icon: 'fa-money-bill-wave', label: 'Fund Transection' },
 ]
@@ -40,6 +43,7 @@ const titles = {
   events:       { title: 'Events',             sub: 'Upcoming alumni events'                      },
   jobs:         { title: 'Jobs',               sub: 'Browse and post job opportunities'           },
   trainings:    { title: 'Trainings',          sub: 'Available training programs'                 },
+  'refer-alumni': { title: 'Refer Alumni',     sub: 'Refer known alumni for admin review'         },
   membership:   { title: 'Membership',         sub: 'Your membership details'                    },
   'fund-transaction': { title: 'Fund Transection', sub: 'Track your fund payments and records'   },
 }
@@ -183,6 +187,18 @@ export default function AlumniDashboard() {
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [profilePhotoFile, setProfilePhotoFile] = useState(null)
   const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
+  const [referralForm, setReferralForm] = useState({
+    referred_name: '',
+    referred_email: '',
+    referred_phone: '',
+    referred_student_id: '',
+    referred_session: '',
+    referred_department: 'ICE',
+    relation_note: '',
+  })
+  const [referralSubmitting, setReferralSubmitting] = useState(false)
+  const [referralMsg, setReferralMsg] = useState('')
+  const [myReferrals, setMyReferrals] = useState([])
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
@@ -240,8 +256,52 @@ export default function AlumniDashboard() {
       getTransactions({ alumni_id: alumniInfo.id })
         .then(({ ok, data }) => { if (ok) setMyFundTransactions(data) })
         .catch(() => {})
+      getReferralsByAlumni(alumniInfo.id)
+        .then(({ ok, data }) => { if (ok) setMyReferrals(Array.isArray(data) ? data : []) })
+        .catch(() => {})
     }
   }, [])
+
+  const handleSubmitReferral = async (e) => {
+    e.preventDefault()
+    if (!alumniInfo.id) return
+    if (!referralForm.referred_name.trim() || !referralForm.referred_email.trim()) {
+      setReferralMsg('error')
+      return
+    }
+
+    setReferralSubmitting(true)
+    setReferralMsg('')
+    try {
+      const payload = {
+        referred_by_alumni_id: alumniInfo.id,
+        ...referralForm,
+      }
+      const { ok } = await createReferral(payload)
+      if (!ok) {
+        setReferralMsg('error')
+        return
+      }
+
+      setReferralMsg('success')
+      setReferralForm({
+        referred_name: '',
+        referred_email: '',
+        referred_phone: '',
+        referred_student_id: '',
+        referred_session: '',
+        referred_department: 'ICE',
+        relation_note: '',
+      })
+
+      const refreshed = await getReferralsByAlumni(alumniInfo.id)
+      if (refreshed.ok) setMyReferrals(Array.isArray(refreshed.data) ? refreshed.data : [])
+    } catch (_) {
+      setReferralMsg('error')
+    } finally {
+      setReferralSubmitting(false)
+    }
+  }
 
   const handleFundInputChange = (requestId, key, value) => {
     setFundFormByRequest(prev => ({
@@ -1671,6 +1731,121 @@ export default function AlumniDashboard() {
                   </div>
                 </div>
               )}
+            </>
+          )}
+
+          {/* ══ MEMBERSHIP ══ */}
+          {activeView === 'refer-alumni' && (
+            <>
+              <div className="ad-section-title">
+                <i className="fa-solid fa-user-plus" style={{color:'#00a3a3'}}></i> Refer a Known Alumni
+              </div>
+              <div className="ad-membership-card" style={{marginBottom:16}}>
+                <div className="ad-mem-header">
+                  <div className="ad-mem-icon"><i className="fa-solid fa-share-nodes"></i></div>
+                  <div>
+                    <h3>Referral Form</h3>
+                    <p>Admin approve করলে referred alumni email invitation পাবে।</p>
+                  </div>
+                </div>
+                <form onSubmit={handleSubmitReferral} style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10,marginTop:12}}>
+                  <input
+                    type="text"
+                    placeholder="Referred alumni name *"
+                    value={referralForm.referred_name}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_name: e.target.value }))}
+                    required
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email *"
+                    value={referralForm.referred_email}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_email: e.target.value }))}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Phone"
+                    value={referralForm.referred_phone}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_phone: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Student ID"
+                    value={referralForm.referred_student_id}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_student_id: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Session"
+                    value={referralForm.referred_session}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_session: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Department"
+                    value={referralForm.referred_department}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_department: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Relation note (optional)"
+                    value={referralForm.relation_note}
+                    onChange={e => setReferralForm(prev => ({ ...prev, relation_note: e.target.value }))}
+                    style={{gridColumn:'1 / -1'}}
+                  />
+                  <div style={{gridColumn:'1 / -1',display:'flex',alignItems:'center',gap:10}}>
+                    <button className="ad-btn-join" type="submit" disabled={referralSubmitting}>
+                      {referralSubmitting ? 'Submitting...' : 'Submit Referral'}
+                    </button>
+                    {referralMsg === 'success' && <span style={{color:'#1a7a4a',fontSize:13,fontWeight:600}}>Referral submitted successfully.</span>}
+                    {referralMsg === 'error' && <span style={{color:'#a32121',fontSize:13,fontWeight:600}}>Submission failed. Please check fields and try again.</span>}
+                  </div>
+                </form>
+              </div>
+
+              <div className="ad-membership-card">
+                <div className="ad-mem-header">
+                  <div className="ad-mem-icon"><i className="fa-solid fa-list-check"></i></div>
+                  <div>
+                    <h3>My Referrals</h3>
+                    <p>Track current referral approval status.</p>
+                  </div>
+                </div>
+                {myReferrals.length === 0 ? (
+                  <div className="ad-mem-notice" style={{marginTop:10}}>
+                    <i className="fa-solid fa-circle-info"></i>
+                    No referral submitted yet.
+                  </div>
+                ) : (
+                  <div style={{overflowX:'auto',marginTop:12}}>
+                    <table className="ad-table" style={{minWidth:760}}>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Student ID</th>
+                          <th>Session</th>
+                          <th>Status</th>
+                          <th>Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myReferrals.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.referred_name}</td>
+                            <td>{r.referred_email}</td>
+                            <td>{r.referred_student_id || '-'}</td>
+                            <td>{r.referred_session || '-'}</td>
+                            <td>{r.status}</td>
+                            <td>{r.created_at ? String(r.created_at).slice(0, 10) : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </>
           )}
 

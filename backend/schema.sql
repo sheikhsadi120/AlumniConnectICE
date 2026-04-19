@@ -213,4 +213,26 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Alumni referrals submitted by approved alumni and reviewed by admin
+CREATE TABLE IF NOT EXISTS alumni_referrals (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    referred_by_alumni_id   INT NOT NULL,
+    referred_name           VARCHAR(120) NOT NULL,
+    referred_email          VARCHAR(150) NOT NULL,
+    referred_phone          VARCHAR(30) DEFAULT NULL,
+    referred_student_id     VARCHAR(30) DEFAULT NULL,
+    referred_session        VARCHAR(20) DEFAULT NULL,
+    referred_department     VARCHAR(50) DEFAULT 'ICE',
+    relation_note           VARCHAR(255) DEFAULT NULL,
+    status                  ENUM('pending','approved','rejected') DEFAULT 'pending',
+    admin_note              VARCHAR(255) DEFAULT NULL,
+    reviewed_by             VARCHAR(60) DEFAULT NULL,
+    reviewed_at             DATETIME DEFAULT NULL,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (referred_by_alumni_id) REFERENCES alumni(id) ON DELETE CASCADE,
+    INDEX idx_referral_pending (status, created_at),
+    INDEX idx_referral_email (referred_email),
+    INDEX idx_referral_student_id (referred_student_id)
+);
+
 
