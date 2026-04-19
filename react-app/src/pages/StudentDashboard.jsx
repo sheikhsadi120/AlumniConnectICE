@@ -221,7 +221,7 @@ export default function StudentDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/')
+      window.location.assign('/student-login')
     }
 
     window.addEventListener('popstate', onPopState)

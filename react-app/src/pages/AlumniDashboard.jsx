@@ -238,7 +238,7 @@ export default function AlumniDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/')
+      window.location.assign('/alumni-login')
     }
 
     window.addEventListener('popstate', onPopState)

@@ -212,7 +212,7 @@ export default function AdminDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/')
+      window.location.assign('/admin-login')
     }
 
     window.addEventListener('popstate', onPopState)
