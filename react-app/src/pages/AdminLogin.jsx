@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Container, Row, Col, Form, Button, Alert, Spinner } from 'react-bootstrap'
 import Navbar from '../components/Navbar'
@@ -12,6 +12,13 @@ function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
+  useEffect(() => {
+    const adminSession = localStorage.getItem('adminSession')
+    if (adminSession === 'true') {
+      navigate('/admin-dashboard', { replace: true })
+    }
+  }, [navigate])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -19,7 +26,8 @@ function AdminLogin() {
     try {
       const { ok, data } = await adminLogin(username, password)
       if (ok) {
-        navigate('/admin-dashboard')
+        localStorage.setItem('adminSession', 'true')
+        navigate('/admin-dashboard', { replace: true })
       } else {
         setError(data.message || 'Invalid username or password.')
       }

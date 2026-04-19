@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner } from 'react-bootstrap'
 import Navbar from '../components/Navbar'
@@ -10,6 +10,17 @@ function AlumniLogin() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const raw = localStorage.getItem('alumniUser')
+    if (!raw) return
+    try {
+      const alumni = JSON.parse(raw)
+      if (alumni && typeof alumni === 'object') {
+        navigate('/alumni-dashboard', { replace: true, state: { alumni } })
+      }
+    } catch (_) {}
+  }, [navigate])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     const email    = e.target.email.value.trim()
@@ -19,7 +30,7 @@ function AlumniLogin() {
     try {
       const { ok, data } = await alumniLogin(email, password)
       if (ok) {
-        navigate('/alumni-dashboard', { state: { alumni: data.alumni } })
+        navigate('/alumni-dashboard', { replace: true, state: { alumni: data.alumni } })
       } else {
         setError(data.message || 'Login failed.')
       }

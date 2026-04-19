@@ -569,7 +569,10 @@ export default function AdminDashboard() {
     if (fileInput) fileInput.value = ''
   }
 
-  const handleLogout = () => navigate('/')
+  const handleLogout = () => {
+    localStorage.removeItem('adminSession')
+    navigate('/')
+  }
   const paidTransactions = transactions.filter(t => (t.status || 'paid') === 'paid')
   const totalFund = paidTransactions.reduce((s, t) => s + Number(t.amount || 0), 0)
 
