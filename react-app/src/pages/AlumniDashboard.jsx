@@ -100,6 +100,7 @@ const samePastJob = (a, b) => (
 export default function AlumniDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
+  const activeViewRef = useRef('dashboard')
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
 
@@ -224,25 +225,33 @@ export default function AlumniDashboard() {
   }, [])
 
   useEffect(() => {
-    const lockState = { dashboardLock: true, role: 'alumni' }
+    const lockState = { dashboardLock: true, role: 'alumni', view: 'dashboard' }
     const dashboardPath = '/alumni-dashboard'
     const homePath = '/'
+
     window.history.replaceState({ dashboardSeed: true, role: 'alumni', view: 'home' }, '', homePath)
     window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
-      if (activeView !== 'dashboard') {
+      if (activeViewRef.current !== 'dashboard') {
         setActiveView('dashboard')
-        setMobileMenuOpen(false)
-        window.history.pushState(lockState, '', window.location.href)
-        return
       }
-
       setMobileMenuOpen(false)
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    activeViewRef.current = activeView
+    if (activeView === 'dashboard') return
+
+    window.history.pushState(
+      { dashboardLock: true, role: 'alumni', view: activeView },
+      '',
+      '/alumni-dashboard'
+    )
   }, [activeView])
 
   // Notifications

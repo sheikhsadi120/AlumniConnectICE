@@ -84,6 +84,7 @@ const getAlumniPastJobs = (alumni) => {
 export default function StudentDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
+  const activeViewRef = useRef('dashboard')
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
 
@@ -207,25 +208,33 @@ export default function StudentDashboard() {
   }, [])
 
   useEffect(() => {
-    const lockState = { dashboardLock: true, role: 'student' }
+    const lockState = { dashboardLock: true, role: 'student', view: 'dashboard' }
     const dashboardPath = '/student-dashboard'
     const homePath = '/'
+
     window.history.replaceState({ dashboardSeed: true, role: 'student', view: 'home' }, '', homePath)
     window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
-      if (activeView !== 'dashboard') {
+      if (activeViewRef.current !== 'dashboard') {
         setActiveView('dashboard')
-        setMobileMenuOpen(false)
-        window.history.pushState(lockState, '', window.location.href)
-        return
       }
-
       setMobileMenuOpen(false)
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    activeViewRef.current = activeView
+    if (activeView === 'dashboard') return
+
+    window.history.pushState(
+      { dashboardLock: true, role: 'student', view: activeView },
+      '',
+      '/student-dashboard'
+    )
   }, [activeView])
 
   // Load events, trainings and alumni directory from API

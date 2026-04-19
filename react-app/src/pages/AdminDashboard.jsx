@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from 'react-bootstrap'
 import {
@@ -50,6 +50,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState('dashboard')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const activeViewRef = useRef('dashboard')
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
   const normalizePersonMedia = useCallback((person) => {
@@ -198,25 +199,33 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    const lockState = { dashboardLock: true, role: 'admin' }
+    const lockState = { dashboardLock: true, role: 'admin', view: 'dashboard' }
     const dashboardPath = '/admin-dashboard'
     const homePath = '/'
+
     window.history.replaceState({ dashboardSeed: true, role: 'admin', view: 'home' }, '', homePath)
     window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
-      if (activeView !== 'dashboard') {
+      if (activeViewRef.current !== 'dashboard') {
         setActiveView('dashboard')
-        setMobileMenuOpen(false)
-        window.history.pushState(lockState, '', window.location.href)
-        return
       }
-
       setMobileMenuOpen(false)
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    activeViewRef.current = activeView
+    if (activeView === 'dashboard') return
+
+    window.history.pushState(
+      { dashboardLock: true, role: 'admin', view: activeView },
+      '',
+      '/admin-dashboard'
+    )
   }, [activeView])
 
   const handleApprove = async (id) => {
