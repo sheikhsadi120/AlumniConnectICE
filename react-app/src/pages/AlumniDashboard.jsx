@@ -224,10 +224,11 @@ export default function AlumniDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!localStorage.getItem('alumniUser')) return
-
     const lockState = { dashboardLock: true, role: 'alumni' }
-    window.history.pushState(lockState, '', window.location.href)
+    const dashboardPath = '/alumni-dashboard'
+    const loginPath = '/alumni-login'
+    window.history.replaceState({ dashboardSeed: true, role: 'alumni', view: 'login' }, '', loginPath)
+    window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
       if (activeView !== 'dashboard') {
@@ -238,12 +239,11 @@ export default function AlumniDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/alumni-login')
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [activeView, navigate])
+  }, [activeView])
 
   // Notifications
   const [notifOpen, setNotifOpen] = useState(false)

@@ -198,10 +198,11 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    if (localStorage.getItem('adminSession') !== 'true') return
-
     const lockState = { dashboardLock: true, role: 'admin' }
-    window.history.pushState(lockState, '', window.location.href)
+    const dashboardPath = '/admin-dashboard'
+    const loginPath = '/admin-login'
+    window.history.replaceState({ dashboardSeed: true, role: 'admin', view: 'login' }, '', loginPath)
+    window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
       if (activeView !== 'dashboard') {
@@ -212,12 +213,11 @@ export default function AdminDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/admin-login')
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [activeView, navigate])
+  }, [activeView])
 
   const handleApprove = async (id) => {
     const { ok } = await approveAlumni(id)

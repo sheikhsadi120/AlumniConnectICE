@@ -207,10 +207,11 @@ export default function StudentDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!localStorage.getItem('studentUser')) return
-
     const lockState = { dashboardLock: true, role: 'student' }
-    window.history.pushState(lockState, '', window.location.href)
+    const dashboardPath = '/student-dashboard'
+    const loginPath = '/student-login'
+    window.history.replaceState({ dashboardSeed: true, role: 'student', view: 'login' }, '', loginPath)
+    window.history.pushState(lockState, '', dashboardPath)
 
     const onPopState = () => {
       if (activeView !== 'dashboard') {
@@ -221,12 +222,11 @@ export default function StudentDashboard() {
       }
 
       setMobileMenuOpen(false)
-      window.location.assign('/student-login')
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [activeView, navigate])
+  }, [activeView])
 
   // Load events, trainings and alumni directory from API
   useEffect(() => {
