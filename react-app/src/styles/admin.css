@@ -35,8 +35,8 @@
 .sidebar-logo .logo-circle {
   background: white;
   color: #5f2c82;
-  width: 38px;
-  height: 38px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -51,7 +51,7 @@
   height: 100%;
   object-fit: contain;
   border-radius: 50%;
-  padding: 2px;
+  padding: 0;
   filter: brightness(1.24) saturate(1.2) drop-shadow(0 1px 4px rgba(255, 255, 255, 0.35));
 }
 
@@ -1352,6 +1352,11 @@
 
   .sidebar-logo {
     padding: 16px 14px 14px;
+  }
+
+  .sidebar-logo .logo-circle {
+    width: 48px;
+    height: 48px;
   }
 
   .admin-mobile-nav-toggle {
