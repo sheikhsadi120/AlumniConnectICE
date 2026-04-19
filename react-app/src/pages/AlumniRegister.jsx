@@ -143,6 +143,9 @@ function AlumniRegister() {
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Email</Form.Label>
                           <Form.Control type="email" name="email" placeholder="example@domain.com" required value={fields.email} onChange={handleChange} />
+                          <Form.Text style={{ color: 'rgba(255,255,255,0.8)' }}>
+                            Please Use Your Personal email(not Student mail)
+                          </Form.Text>
                         </Form.Group>
                       </Col>
                       <Col xs={12}>
