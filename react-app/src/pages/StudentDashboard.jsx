@@ -84,8 +84,6 @@ const getAlumniPastJobs = (alumni) => {
 export default function StudentDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
-  const activeViewRef = useRef('dashboard')
-  const lastBackAtRef = useRef(0)
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
 
@@ -188,10 +186,6 @@ export default function StudentDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
 
-  useEffect(() => {
-    activeViewRef.current = activeView
-  }, [activeView])
-
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
 
   useEffect(() => {
@@ -219,25 +213,23 @@ export default function StudentDashboard() {
     window.history.pushState(lockState, '', window.location.href)
 
     const onPopState = () => {
-      const now = Date.now()
-      const isOnDashboard = activeViewRef.current === 'dashboard'
-      const isDoubleBack = isOnDashboard && now - lastBackAtRef.current < 1200
-
-      if (isDoubleBack) {
-        lastBackAtRef.current = 0
-        navigate('/', { replace: true })
+      if (activeView !== 'dashboard') {
+        setActiveView('dashboard')
+        setMobileMenuOpen(false)
+        window.history.pushState(lockState, '', window.location.href)
         return
       }
 
-      setActiveView('dashboard')
+      window.removeEventListener('popstate', onPopState)
       setMobileMenuOpen(false)
-      lastBackAtRef.current = now
-      window.history.pushState(lockState, '', window.location.href)
+      if (localStorage.getItem('studentUser')) {
+        navigate('/', { replace: true })
+      }
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [navigate])
+  }, [activeView, navigate])
 
   // Load events, trainings and alumni directory from API
   useEffect(() => {
