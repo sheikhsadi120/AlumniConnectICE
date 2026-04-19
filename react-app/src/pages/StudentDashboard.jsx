@@ -220,11 +220,8 @@ export default function StudentDashboard() {
         return
       }
 
-      window.removeEventListener('popstate', onPopState)
       setMobileMenuOpen(false)
-      if (localStorage.getItem('studentUser')) {
-        navigate('/')
-      }
+      window.location.assign('/')
     }
 
     window.addEventListener('popstate', onPopState)

@@ -237,11 +237,8 @@ export default function AlumniDashboard() {
         return
       }
 
-      window.removeEventListener('popstate', onPopState)
       setMobileMenuOpen(false)
-      if (localStorage.getItem('alumniUser')) {
-        navigate('/')
-      }
+      window.location.assign('/')
     }
 
     window.addEventListener('popstate', onPopState)
