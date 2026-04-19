@@ -197,6 +197,22 @@ export default function AdminDashboard() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    if (localStorage.getItem('adminSession') !== 'true') return
+
+    const lockState = { dashboardLock: true, role: 'admin' }
+    window.history.pushState(lockState, '', window.location.href)
+
+    const onPopState = () => {
+      setActiveView('dashboard')
+      setMobileMenuOpen(false)
+      window.history.pushState(lockState, '', window.location.href)
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const handleApprove = async (id) => {
     const { ok } = await approveAlumni(id)
     if (ok) {

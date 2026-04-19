@@ -223,6 +223,22 @@ export default function AlumniDashboard() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    if (!localStorage.getItem('alumniUser')) return
+
+    const lockState = { dashboardLock: true, role: 'alumni' }
+    window.history.pushState(lockState, '', window.location.href)
+
+    const onPopState = () => {
+      setActiveView('dashboard')
+      setMobileMenuOpen(false)
+      window.history.pushState(lockState, '', window.location.href)
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   // Notifications
   const [notifOpen, setNotifOpen] = useState(false)
   const [seenKeys, setSeenKeys] = useState(() => {
