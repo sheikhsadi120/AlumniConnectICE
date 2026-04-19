@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from 'react-bootstrap'
 import {
@@ -50,6 +50,12 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState('dashboard')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const activeViewRef = useRef('dashboard')
+  const lastBackAtRef = useRef(0)
+
+  useEffect(() => {
+    activeViewRef.current = activeView
+  }, [activeView])
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
   const normalizePersonMedia = useCallback((person) => {
@@ -204,14 +210,25 @@ export default function AdminDashboard() {
     window.history.pushState(lockState, '', window.location.href)
 
     const onPopState = () => {
+      const now = Date.now()
+      const isOnDashboard = activeViewRef.current === 'dashboard'
+      const isDoubleBack = isOnDashboard && now - lastBackAtRef.current < 1200
+
+      if (isDoubleBack) {
+        lastBackAtRef.current = 0
+        navigate('/', { replace: true })
+        return
+      }
+
       setActiveView('dashboard')
       setMobileMenuOpen(false)
+      lastBackAtRef.current = now
       window.history.pushState(lockState, '', window.location.href)
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  }, [navigate])
 
   const handleApprove = async (id) => {
     const { ok } = await approveAlumni(id)
