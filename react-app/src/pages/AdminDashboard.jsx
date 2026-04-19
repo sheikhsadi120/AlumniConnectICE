@@ -743,9 +743,11 @@ export default function AdminDashboard() {
     })
   }, [activeView, menuNotifications])
 
+  const totalPendingRequests = pending.length + upgradeRequests.length + pendingReferrals.length
+
   const navItems = [
     { view:'dashboard',    icon:'fa-gauge-high',      label:'Dashboard',          section:'Main Menu' },
-    { view:'pending',      icon:'fa-clock',            label:'Pending Approvals',  badge: pending.length + pendingReferrals.length, section:null },
+    { view:'pending',      icon:'fa-clock',            label:'Pending Approvals',  badge: totalPendingRequests, section:null },
     { view:'alumni',       icon:'fa-user-graduate',    label:'All Alumni',         section:null },
     { view:'students',     icon:'fa-users',            label:'All Students',       section:null },
     { view:'events',       icon:'fa-calendar-days',   label:'Events',             badge: menuUnreadCounts.events, section:null },
@@ -880,7 +882,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon orange"><i className="fa-solid fa-clock"></i></div>
-                  <div className="stat-info"><h3>{stats.pending}</h3><p>Pending Approvals</p></div>
+                  <div className="stat-info"><h3>{totalPendingRequests}</h3><p>Pending Approvals</p></div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon green"><i className="fa-solid fa-calendar-days"></i></div>
@@ -906,7 +908,7 @@ export default function AdminDashboard() {
               <div className="section-title">
                 <i className="fa-solid fa-clock" style={{color:'#00a3a3'}}></i>
                 Recent Pending Approvals
-                <span className="badge-count">{pending.length}</span>
+                <span className="badge-count">{totalPendingRequests}</span>
               </div>
               <PendingCards rows={pending.slice(0,3)} onApprove={handleApprove} onReject={handleReject} />
             </>

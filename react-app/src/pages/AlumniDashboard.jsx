@@ -1748,7 +1748,7 @@ export default function AlumniDashboard() {
                     <p>Admin approve করলে referred alumni email invitation পাবে।</p>
                   </div>
                 </div>
-                <form onSubmit={handleSubmitReferral} style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10,marginTop:12}}>
+                <form onSubmit={handleSubmitReferral} className="ad-referral-form">
                   <input
                     type="text"
                     placeholder="Referred alumni name *"
@@ -1792,9 +1792,9 @@ export default function AlumniDashboard() {
                     placeholder="Relation note (optional)"
                     value={referralForm.relation_note}
                     onChange={e => setReferralForm(prev => ({ ...prev, relation_note: e.target.value }))}
-                    style={{gridColumn:'1 / -1'}}
+                    className="ad-referral-note"
                   />
-                  <div style={{gridColumn:'1 / -1',display:'flex',alignItems:'center',gap:10}}>
+                  <div className="ad-referral-actions">
                     <button className="ad-btn-join" type="submit" disabled={referralSubmitting}>
                       {referralSubmitting ? 'Submitting...' : 'Submit Referral'}
                     </button>
@@ -1818,8 +1818,8 @@ export default function AlumniDashboard() {
                     No referral submitted yet.
                   </div>
                 ) : (
-                  <div style={{overflowX:'auto',marginTop:12}}>
-                    <table className="ad-table" style={{minWidth:760}}>
+                  <div className="ad-referral-table-wrap">
+                    <table className="ad-table ad-referral-table">
                       <thead>
                         <tr>
                           <th>Name</th>

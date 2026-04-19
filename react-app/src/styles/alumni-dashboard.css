@@ -529,6 +529,33 @@ img.ad-profile-avatar {
 }
 .notif-item:last-child { border-bottom: none; }
 
+.ad-referral-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ad-referral-note,
+.ad-referral-actions {
+  grid-column: 1 / -1;
+}
+
+.ad-referral-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ad-referral-table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+
+.ad-referral-table {
+  min-width: 760px;
+}
+
 @media (max-width: 1024px) {
   .ad-wrapper {
     flex-direction: column;
@@ -734,6 +761,19 @@ img.ad-profile-avatar {
 
   .ad-form-actions {
     flex-direction: column;
+  }
+
+  .ad-referral-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ad-referral-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ad-referral-table {
+    min-width: 620px;
   }
 }
 .notif-item:hover { background: #faf8ff; }
