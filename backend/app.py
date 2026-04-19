@@ -1370,7 +1370,7 @@ def register():
     cur = conn.cursor()
     try:
         # If an admin-added "Existing Alumni" row matches by email or student ID,
-        # convert it to a real active account and move directly to All Alumni.
+        # update that row as a real registration but keep it pending for admin approval.
         cur.execute(
             """
             SELECT id, is_manually_added
@@ -1399,9 +1399,9 @@ def register():
                        password=%s,
                        photo=CASE WHEN %s IS NULL THEN photo ELSE %s END,
                        id_photo=CASE WHEN %s IS NULL THEN id_photo ELSE %s END,
-                         status='approved',
+                                             status='pending',
                        user_type=%s,
-                         is_manually_added=0,
+                                             is_manually_added=1,
                        upgrade_request=NULL,
                        upgrade_document=NULL
                  WHERE id=%s
@@ -1421,13 +1421,13 @@ def register():
             conn.commit()
             warning = None
             try:
-                send_existing_alumni_activation_email(data.get('name'), email)
+                send_registration_received_email(data.get('name'), email, user_type)
             except Exception as ex:
                 warning = str(ex)
             return jsonify({
                 'success': True,
                 'id': existing['id'],
-                'message': 'Registration completed. Your account is now active.',
+                'message': 'Registration submitted. Waiting for admin approval.',
                 'email_warning': warning,
             }), 201
 
