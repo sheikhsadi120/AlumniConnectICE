@@ -214,7 +214,7 @@ export default function AdminDashboard() {
       window.removeEventListener('popstate', onPopState)
       setMobileMenuOpen(false)
       if (localStorage.getItem('adminSession') === 'true') {
-        navigate('/', { replace: true })
+        navigate('/')
       }
     }
 

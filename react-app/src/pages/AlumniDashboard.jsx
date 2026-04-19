@@ -240,7 +240,7 @@ export default function AlumniDashboard() {
       window.removeEventListener('popstate', onPopState)
       setMobileMenuOpen(false)
       if (localStorage.getItem('alumniUser')) {
-        navigate('/', { replace: true })
+        navigate('/')
       }
     }
 
