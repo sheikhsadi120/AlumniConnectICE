@@ -666,7 +666,9 @@ export default function AlumniDashboard() {
       {/* ── SIDEBAR ── */}
       <aside className="ad-sidebar">
         <div className="ad-sidebar-logo">
-          <div className="ad-logo-circle">AC</div>
+          <div className="ad-logo-circle">
+            <img src="/assets/ice-logo-watermark.png" alt="Department Seal" className="ad-logo-seal-image" />
+          </div>
           <div>
             <span className="ad-logo-title">AlumniConnect</span>
             <span className="ad-logo-sub">ICE Department</span>

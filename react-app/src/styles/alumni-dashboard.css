@@ -39,6 +39,15 @@
   font-weight: 800; font-size: 14px;
   flex-shrink: 0;
 }
+
+.ad-logo-seal-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+  padding: 2px;
+  filter: brightness(1.24) saturate(1.2) drop-shadow(0 1px 4px rgba(255, 255, 255, 0.35));
+}
 .ad-logo-title { color: white; font-weight: 700; font-size: 15px; display: block; }
 .ad-logo-sub   { color: rgba(255,255,255,0.55); font-size: 11px; display: block; }
 

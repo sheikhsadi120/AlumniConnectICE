@@ -788,7 +788,9 @@ export default function AdminDashboard() {
       {/* SIDEBAR */}
       <aside className="admin-sidebar">
         <div className="sidebar-logo">
-          <div className="logo-circle">A</div>
+          <div className="logo-circle">
+            <img src="/assets/ice-logo-watermark.png" alt="Department Seal" className="logo-seal-image" />
+          </div>
           <div><span>ALUMNICONNECT</span><small>Admin Panel</small></div>
         </div>
 
