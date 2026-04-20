@@ -138,6 +138,32 @@
 .ad-topbar-right {
   display: flex; align-items: center; gap: 12px;
 }
+
+.ad-topbar-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refer-shortcut-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f4f0f8;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #5f2c82;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.refer-shortcut-btn:hover {
+  background: #ede6f7;
+}
 .ad-topbar-avatar {
   width: 40px; height: 40px; border-radius: 50%;
   background: linear-gradient(135deg, #5f2c82, #a4508b);
@@ -681,6 +707,12 @@ img.ad-profile-avatar {
     justify-content: space-between;
     flex-wrap: wrap;
     row-gap: 10px;
+  }
+
+  .ad-topbar-quick-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .ad-content {

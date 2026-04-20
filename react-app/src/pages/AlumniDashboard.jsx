@@ -202,9 +202,17 @@ export default function AlumniDashboard() {
   const [myReferrals, setMyReferrals] = useState([])
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [imagePreview, setImagePreview] = useState(null)
   const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
 
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
+
+  const openImagePreview = (src, altText = 'Profile image') => {
+    if (!src) return
+    setImagePreview({ src, altText })
+  }
+
+  const closeImagePreview = () => setImagePreview(null)
 
   useEffect(() => {
     setAvatarLoadFailed(false)
@@ -757,40 +765,54 @@ export default function AlumniDashboard() {
             <p>{titles[activeView].sub}</p>
           </div>
           <div className="ad-topbar-right">
-            {/* Notification Bell */}
-            <div className="notif-bell-wrap" ref={notifRef}>
-              <button className="notif-bell-btn" onClick={() => { setNotifOpen(o => { if (!o) markAllRead(); return !o }) }}>
-                <i className="fa-solid fa-bell"></i>
-                {unreadCount > 0 && <span className="notif-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-              </button>
-              {notifOpen && (
-                <div className="notif-dropdown">
-                  <div className="notif-header">
-                    <div className="notif-header-left">
-                      Notifications
-                      {unreadCount > 0 && <span className="notif-unread-pill">{unreadCount} new</span>}
+            <div className="ad-topbar-quick-actions">
+              {/* Notification Bell */}
+              <div className="notif-bell-wrap" ref={notifRef}>
+                <button className="notif-bell-btn" onClick={() => { setNotifOpen(o => { if (!o) markAllRead(); return !o }) }}>
+                  <i className="fa-solid fa-bell"></i>
+                  {unreadCount > 0 && <span className="notif-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+                </button>
+                {notifOpen && (
+                  <div className="notif-dropdown">
+                    <div className="notif-header">
+                      <div className="notif-header-left">
+                        Notifications
+                        {unreadCount > 0 && <span className="notif-unread-pill">{unreadCount} new</span>}
+                      </div>
+                      <button className="notif-close-btn" onClick={() => setNotifOpen(false)}><i className="fa-solid fa-xmark"></i></button>
                     </div>
-                    <button className="notif-close-btn" onClick={() => setNotifOpen(false)}><i className="fa-solid fa-xmark"></i></button>
-                  </div>
-                  <div className="notif-list">
-                    {notifications.length === 0
-                      ? <div className="notif-empty"><i className="fa-regular fa-bell-slash" style={{fontSize:28,marginBottom:8,display:'block'}}></i>No notifications yet</div>
-                      : notifications.map(n => (
-                          <div key={n.key} className={`notif-item${seenKeys.has(n.key) ? '' : ' unread'}`}>
-                            <div className="notif-icon" style={{background: n.color + '18', color: n.color}}>
-                              <i className={`fa-solid ${n.icon}`}></i>
+                    <div className="notif-list">
+                      {notifications.length === 0
+                        ? <div className="notif-empty"><i className="fa-regular fa-bell-slash" style={{fontSize:28,marginBottom:8,display:'block'}}></i>No notifications yet</div>
+                        : notifications.map(n => (
+                            <div key={n.key} className={`notif-item${seenKeys.has(n.key) ? '' : ' unread'}`}>
+                              <div className="notif-icon" style={{background: n.color + '18', color: n.color}}>
+                                <i className={`fa-solid ${n.icon}`}></i>
+                              </div>
+                              <div className="notif-body">
+                                <span className="notif-label">{n.label}</span>
+                                <p className="notif-title">{n.title}</p>
+                                {n.meta && <span className="notif-meta">{n.meta}</span>}
+                              </div>
                             </div>
-                            <div className="notif-body">
-                              <span className="notif-label">{n.label}</span>
-                              <p className="notif-title">{n.title}</p>
-                              {n.meta && <span className="notif-meta">{n.meta}</span>}
-                            </div>
-                          </div>
-                        ))
-                    }
+                          ))
+                      }
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+
+              <button
+                className="refer-shortcut-btn"
+                onClick={() => {
+                  setActiveView('refer-alumni')
+                  setNotifOpen(false)
+                }}
+                aria-label="Go to Refer Alumni"
+                title="Refer Alumni"
+              >
+                <i className="fa-solid fa-user-plus"></i>
+              </button>
             </div>
             {(profileAvatarUrl && !avatarLoadFailed)
               ? <img src={profileAvatarUrl} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
@@ -881,7 +903,7 @@ export default function AlumniDashboard() {
               </div>
               <div className="ad-profile-card">
                 {(profileAvatarUrl && !avatarLoadFailed)
-                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover', cursor:'zoom-in'}} onError={() => setAvatarLoadFailed(true)} onClick={() => openImagePreview(profileAvatarUrl, profile.name)} />
                   : <div className="ad-profile-avatar">{profile.name[0]}</div>
                 }
                 <div className="ad-profile-details">
@@ -1029,7 +1051,7 @@ export default function AlumniDashboard() {
                         boxShadow:'0 3px 10px rgba(95,44,130,0.22)',
                       }}>
                         {resolveAvatarUrl(a)
-                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={(e) => { e.stopPropagation(); openImagePreview(resolveAvatarUrl(a), a.name) }} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -1174,7 +1196,7 @@ export default function AlumniDashboard() {
                         boxShadow:'0 3px 10px rgba(26,110,181,0.22)',
                       }}>
                         {resolveAvatarUrl(a)
-                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={(e) => { e.stopPropagation(); openImagePreview(resolveAvatarUrl(a), a.name) }} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -1232,7 +1254,7 @@ export default function AlumniDashboard() {
               </div>
               <div className="ad-profile-card big">
                 {(profileAvatarUrl && !avatarLoadFailed)
-                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover', cursor:'zoom-in'}} onError={() => setAvatarLoadFailed(true)} onClick={() => openImagePreview(profileAvatarUrl, profile.name)} />
                   : <div className="ad-profile-avatar large">{profile.name[0]}</div>
                 }
                 {!editMode ? (
@@ -2068,7 +2090,7 @@ export default function AlumniDashboard() {
                 marginTop:-48,overflow:'hidden',boxShadow:'0 6px 24px rgba(95,44,130,0.25)',
               }}>
                 {resolveAvatarUrl(selectedAlumni)
-                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={() => openImagePreview(resolveAvatarUrl(selectedAlumni), selectedAlumni.name)} />
                   : selectedAlumni.name[0].toUpperCase()
                 }
               </div>
@@ -2194,6 +2216,31 @@ export default function AlumniDashboard() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {imagePreview && (
+        <div
+          style={{position:'fixed',inset:0,background:'rgba(10, 6, 24, 0.84)',zIndex:1300,display:'flex',alignItems:'center',justifyContent:'center',padding:20,backdropFilter:'blur(3px)'}}
+          onClick={closeImagePreview}
+        >
+          <div
+            style={{position:'relative',maxWidth:'min(92vw, 760px)',maxHeight:'90vh',display:'flex',alignItems:'center',justifyContent:'center'}}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closeImagePreview}
+              style={{position:'absolute',top:-14,right:-10,background:'rgba(255,255,255,0.22)',border:'1px solid rgba(255,255,255,0.35)',borderRadius:'50%',width:36,height:36,cursor:'pointer',color:'white',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}
+              aria-label="Close image preview"
+            >
+              ✕
+            </button>
+            <img
+              src={imagePreview.src}
+              alt={imagePreview.altText}
+              style={{maxWidth:'100%',maxHeight:'90vh',objectFit:'contain',borderRadius:16,boxShadow:'0 16px 48px rgba(0,0,0,0.45)'}}
+            />
           </div>
         </div>
       )}

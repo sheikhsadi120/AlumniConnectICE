@@ -217,9 +217,6 @@ function AlumniRegister() {
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Upload ID card / academic evidence</Form.Label>
                           <Form.Control type="file" name="idcard" accept="image/*" onChange={handleFileChange} />
-                          <Form.Text style={{ color: 'rgba(255,255,255,0.8)' }}>
-                            Large images are auto-compressed for stable upload. Max {formatBytes(MAX_UPLOAD_BYTES)}.
-                          </Form.Text>
                           {idcardPreview && (
                             <img src={idcardPreview} alt="ID preview" style={{ marginTop: 6, width: '100%', maxHeight: 80, objectFit: 'cover', borderRadius: 6, border: '2px solid rgba(255,255,255,0.35)' }} />
                           )}
@@ -229,9 +226,6 @@ function AlumniRegister() {
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Upload Your Photo</Form.Label>
                           <Form.Control type="file" name="photo" accept="image/*" onChange={handleFileChange} />
-                          <Form.Text style={{ color: 'rgba(255,255,255,0.8)' }}>
-                            Large images are auto-compressed for stable upload. Max {formatBytes(MAX_UPLOAD_BYTES)}.
-                          </Form.Text>
                           {photoPreview && (
                             <img src={photoPreview} alt="Photo preview" style={{ marginTop: 6, width: '100%', maxHeight: 80, objectFit: 'cover', borderRadius: 6, border: '2px solid rgba(255,255,255,0.35)' }} />
                           )}

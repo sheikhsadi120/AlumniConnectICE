@@ -994,7 +994,7 @@ export default function AdminDashboard() {
                           <td>{a.session}</td>
                           <td>{a.company}</td>
                           <td>{a.designation}</td>
-                          <td><span className="status-badge approved">\u2714 Approved</span></td>
+                          <td><span className="status-badge approved">Approved</span></td>
                           <td><button className="btn-delete" onClick={() => handleDeleteAlumni(a.id)}><i className="fa-solid fa-trash"></i> Remove</button></td>
                         </tr>
                       ))}
@@ -1031,7 +1031,7 @@ export default function AdminDashboard() {
                           <td>{a.phone}</td>
                           <td>{a.department}</td>
                           <td>{a.session}</td>
-                          <td><span className="status-badge approved">✔ Approved</span></td>
+                          <td><span className="status-badge approved">Approved</span></td>
                           <td><button className="btn-delete" onClick={() => handleDeleteStudent(a.id)}><i className="fa-solid fa-trash"></i> Remove</button></td>
                         </tr>
                       ))}
