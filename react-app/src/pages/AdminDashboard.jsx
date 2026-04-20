@@ -971,7 +971,7 @@ export default function AdminDashboard() {
           {activeView === 'alumni' && (
             <>
               <div className="section-title">
-                <i className="fa-solid fa-users" style={{color:'#00a3a3'}}></i>
+                <i className="fa-solid fa-user-graduate" style={{color:'#00a3a3'}}></i>
                 All Alumni <span className="badge-count">{alumni.length}</span>
               </div>
               {alumni.length === 0 ? (
@@ -1009,7 +1009,7 @@ export default function AdminDashboard() {
           {activeView === 'students' && (
             <>
               <div className="section-title">
-                <i className="fa-solid fa-user-graduate" style={{color:'#00a3a3'}}></i>
+                <i className="fa-solid fa-users" style={{color:'#00a3a3'}}></i>
                 All Students <span className="badge-count">{students.length}</span>
               </div>
               {students.length === 0 ? (
