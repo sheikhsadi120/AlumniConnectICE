@@ -4,9 +4,12 @@ import { Container, Row, Col, Form, Button, Alert, Spinner, Modal, Badge } from 
 import Navbar from '../components/Navbar'
 import '../styles/login.css'
 import { register } from '../services/api'
+import { optimizeImageForUpload, formatBytes } from '../utils/imageUpload'
 
 function AlumniRegister() {
   const PASSWORD_MIN_LENGTH = 6
+  const TARGET_UPLOAD_BYTES = 900 * 1024
+  const MAX_UPLOAD_BYTES = 1500 * 1024
   const [submitted, setSubmitted] = useState(false)
   const [confirmStyle, setConfirmStyle] = useState({})
   const [confirmPlaceholder, setConfirmPlaceholder] = useState('********')
@@ -48,12 +51,32 @@ function AlumniRegister() {
     })
   }
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const { name, files } = e.target
     if (!files[0]) return
-    const url = URL.createObjectURL(files[0])
-    if (name === 'photo')  { setPhotoFile(files[0]);  setPhotoPreview(url) }
-    if (name === 'idcard') { setIdcardFile(files[0]); setIdcardPreview(url) }
+
+    try {
+      setApiError('')
+      const optimized = await optimizeImageForUpload(files[0], {
+        targetBytes: TARGET_UPLOAD_BYTES,
+        hardMaxBytes: MAX_UPLOAD_BYTES,
+      })
+
+      const url = URL.createObjectURL(optimized)
+      if (name === 'photo') {
+        if (photoPreview) URL.revokeObjectURL(photoPreview)
+        setPhotoFile(optimized)
+        setPhotoPreview(url)
+      }
+      if (name === 'idcard') {
+        if (idcardPreview) URL.revokeObjectURL(idcardPreview)
+        setIdcardFile(optimized)
+        setIdcardPreview(url)
+      }
+    } catch (err) {
+      e.target.value = ''
+      setApiError(err?.message || 'Could not process the selected image. Please choose a smaller image.')
+    }
   }
 
   const handleRegisterClick = (e) => {
@@ -194,6 +217,9 @@ function AlumniRegister() {
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Upload ID card / academic evidence</Form.Label>
                           <Form.Control type="file" name="idcard" accept="image/*" onChange={handleFileChange} />
+                          <Form.Text style={{ color: 'rgba(255,255,255,0.8)' }}>
+                            Large images are auto-compressed for stable upload. Max {formatBytes(MAX_UPLOAD_BYTES)}.
+                          </Form.Text>
                           {idcardPreview && (
                             <img src={idcardPreview} alt="ID preview" style={{ marginTop: 6, width: '100%', maxHeight: 80, objectFit: 'cover', borderRadius: 6, border: '2px solid rgba(255,255,255,0.35)' }} />
                           )}
@@ -203,6 +229,9 @@ function AlumniRegister() {
                         <Form.Group className="mb-3 text-start">
                           <Form.Label>Upload Your Photo</Form.Label>
                           <Form.Control type="file" name="photo" accept="image/*" onChange={handleFileChange} />
+                          <Form.Text style={{ color: 'rgba(255,255,255,0.8)' }}>
+                            Large images are auto-compressed for stable upload. Max {formatBytes(MAX_UPLOAD_BYTES)}.
+                          </Form.Text>
                           {photoPreview && (
                             <img src={photoPreview} alt="Photo preview" style={{ marginTop: 6, width: '100%', maxHeight: 80, objectFit: 'cover', borderRadius: 6, border: '2px solid rgba(255,255,255,0.35)' }} />
                           )}

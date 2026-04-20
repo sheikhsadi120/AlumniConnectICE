@@ -9,7 +9,7 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 import smtplib
 import json
 import time
@@ -48,6 +48,7 @@ except OSError:
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB limit
+MAX_IMAGE_UPLOAD_BYTES = int(os.getenv('MAX_IMAGE_UPLOAD_BYTES', str(2 * 1024 * 1024)))
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Avoid browser "Failed to fetch" from CORS misconfiguration.
@@ -476,6 +477,8 @@ def save_uploaded_image(file_storage):
     file_key = f"{uuid.uuid4().hex}_{safe_name}"
     file_bytes = file_storage.read()
     if not file_bytes:
+        return None
+    if len(file_bytes) > MAX_IMAGE_UPLOAD_BYTES:
         return None
 
     db_saved = False
@@ -965,6 +968,15 @@ def create_password_reset_otp(conn, person, user_type):
     return otp
 
 # ─── Global JSON error handlers ───────────────────────
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_e):
+    max_mb = max(1, int(app.config.get('MAX_CONTENT_LENGTH', 0) / (1024 * 1024)))
+    return jsonify({
+        'success': False,
+        'message': f'Request payload too large. Please upload smaller images and keep total payload under {max_mb} MB.'
+    }), 413
+
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Return JSON for all unhandled exceptions instead of HTML."""
@@ -972,6 +984,9 @@ def handle_exception(e):
         message = (e.description or 'Request failed').strip()
         if e.code == 405:
             message = 'Method not allowed'
+        if e.code == 413:
+            max_mb = max(1, int(app.config.get('MAX_CONTENT_LENGTH', 0) / (1024 * 1024)))
+            message = f'Request payload too large. Please upload smaller images and keep total payload under {max_mb} MB.'
         return jsonify({'success': False, 'message': message}), int(e.code or 500)
 
     if isinstance(e, pymysql_err.OperationalError):
@@ -1357,10 +1372,16 @@ def register():
 
     # Save profile photo if provided
     photo_filename = save_uploaded_image(photo_file)
+    if photo_file and photo_file.filename and not photo_filename:
+        max_mb = max(1, int(MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024)))
+        return jsonify({'success': False, 'message': f'Photo is invalid or too large. Please upload JPG/PNG/WEBP/GIF up to {max_mb} MB.'}), 400
 
     # Save ID card photo if provided
     idcard_file = request.files.get('idcard') if (request.content_type and 'multipart/form-data' in request.content_type) else None
     idcard_filename = save_uploaded_image(idcard_file)
+    if idcard_file and idcard_file.filename and not idcard_filename:
+        max_mb = max(1, int(MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024)))
+        return jsonify({'success': False, 'message': f'ID card/evidence image is invalid or too large. Please upload JPG/PNG/WEBP/GIF up to {max_mb} MB.'}), 400
 
     email = (data.get('email') or '').strip()
     student_id = (data.get('student_id') or '').strip()
@@ -1930,6 +1951,10 @@ def request_upgrade(aid):
             cur.close()
             return jsonify({'success': False, 'message': 'Invalid file type. Upload JPG, JPEG, PNG, or WEBP image only.'}), 400
         document_filename = save_uploaded_image(document_file)
+        if not document_filename:
+            cur.close()
+            max_mb = max(1, int(MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024)))
+            return jsonify({'success': False, 'message': f'Uploaded document is too large. Keep file size up to {max_mb} MB.'}), 400
 
     # Optionally update graduation details provided at request time
     updates = []

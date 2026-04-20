@@ -97,7 +97,10 @@ async function request(path, options = {}) {
       try {
         data = await res.json();
       } catch (_) {
-        data = { success: false, message: `Server error (HTTP ${res.status})` };
+        const fallbackMessage = res.status === 413
+          ? 'Uploaded files are too large. Please choose smaller images and try again.'
+          : `Server error (HTTP ${res.status})`;
+        data = { success: false, message: fallbackMessage };
       }
 
       // A wrong base (for example frontend origin `/api`) often returns non-JSON
