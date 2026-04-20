@@ -15,6 +15,7 @@ import json
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 from urllib.parse import urlparse
@@ -729,13 +730,55 @@ def _build_email_html(subject, preheader, message, cta_text='Visit AlumniConnect
     """
 
 
+def _normalize_recipient_emails(raw_recipients):
+    normalized = []
+    seen = set()
+    pattern = re.compile(r'^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$', re.IGNORECASE)
+
+    for raw in (raw_recipients or []):
+        email = str(raw or '').strip().lower()
+        if not email or email in seen:
+            continue
+        if not pattern.match(email):
+            continue
+        seen.add(email)
+        normalized.append(email)
+
+    return normalized
+
+
+def _normalize_plain_content(subject, preheader, message):
+    blocks = [str(subject or '').strip(), str(preheader or '').strip(), str(message or '').strip()]
+    filtered = [b for b in blocks if b]
+    return "\n\n".join(filtered) + "\n"
+
+
+def _mail_metadata_headers():
+    headers = {
+        'Precedence': 'bulk',
+        'X-Auto-Response-Suppress': 'All',
+    }
+
+    unsubscribe_parts = []
+    if config.MAIL_UNSUBSCRIBE_URL:
+        unsubscribe_parts.append(f"<{config.MAIL_UNSUBSCRIBE_URL}>")
+    if config.MAIL_UNSUBSCRIBE_EMAIL:
+        unsubscribe_parts.append(f"<mailto:{config.MAIL_UNSUBSCRIBE_EMAIL}?subject=unsubscribe>")
+
+    if unsubscribe_parts:
+        headers['List-Unsubscribe'] = ', '.join(unsubscribe_parts)
+        headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
+
+    return headers
+
+
 def send_email(to_emails, subject, message, preheader='', cta_text='Visit AlumniConnect'):
-    recipients = [e.strip() for e in (to_emails or []) if str(e).strip()]
+    recipients = _normalize_recipient_emails(to_emails)
     if not recipients:
         return {'sent': 0, 'failed': 0, 'errors': []}
 
     html_content = _build_email_html(subject, preheader, message, cta_text)
-    plain_content = f"{subject}\n\n{preheader}\n\n{message}\n"
+    plain_content = _normalize_plain_content(subject, preheader, message)
     provider = active_mail_provider()
     forced_domains = {d.strip().lower() for d in (config.MAIL_FORCE_SMTP_DOMAINS or []) if d and d.strip()}
 
@@ -842,6 +885,7 @@ def _send_email_via_brevo(recipients, subject, plain_content, html_content):
         for d in (getattr(config, 'MAIL_PLAIN_ONLY_DOMAINS', None) or [])
         if d and d.strip()
     }
+    custom_headers = _mail_metadata_headers()
 
     for email in recipients:
         domain = email.rsplit('@', 1)[-1].strip().lower() if '@' in email else ''
@@ -852,7 +896,12 @@ def _send_email_via_brevo(recipients, subject, plain_content, html_content):
             'to': [{'email': email}],
             'subject': str(subject or ''),
             'textContent': plain_content,
+            'replyTo': {'email': config.MAIL_REPLY_TO or config.SMTP_FROM_EMAIL},
+            'headers': custom_headers,
+            'tags': [config.MAIL_BULK_TAG] if config.MAIL_BULK_TAG else None,
         }
+        if payload.get('tags') is None:
+            payload.pop('tags', None)
         if not plain_only:
             payload['htmlContent'] = html_content
         data = json.dumps(payload).encode('utf-8')
@@ -922,6 +971,14 @@ def _send_email_via_smtp(recipients, subject, plain_content, html_content):
             msg['Subject'] = subject
             msg['From'] = f"{config.SMTP_FROM_NAME} <{config.SMTP_FROM_EMAIL}>"
             msg['To'] = email
+            msg['Date'] = formatdate(localtime=True)
+            msg['Message-ID'] = make_msgid(domain=(config.SMTP_FROM_EMAIL.split('@')[-1] if '@' in config.SMTP_FROM_EMAIL else None))
+            if config.MAIL_REPLY_TO:
+                msg['Reply-To'] = config.MAIL_REPLY_TO
+
+            for key, value in _mail_metadata_headers().items():
+                msg[key] = value
+
             msg.attach(MIMEText(plain_content, 'plain', 'utf-8'))
             msg.attach(MIMEText(html_content, 'html', 'utf-8'))
             try:
@@ -2112,7 +2169,7 @@ def add_event():
 @app.route('/api/email/send', methods=['POST'])
 def send_bulk_email_endpoint():
     data = request.get_json() or {}
-    recipients = data.get('recipient_emails') or []
+    recipients = _normalize_recipient_emails(data.get('recipient_emails') or [])
     subject = (data.get('subject') or '').strip()
     message = (data.get('message') or '').strip()
     preheader = (data.get('preheader') or '').strip()
