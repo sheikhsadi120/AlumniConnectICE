@@ -84,7 +84,7 @@ function Home() {
                   </div>
                   <div className="alumni-node node-5">
                     <div className="avatar">N</div>
-                    <span>Nadia</span>
+                    <span>Mehedi</span>
                     <small>ICE25</small>
                     <small className="designation">Dev @ Pathao</small>
                   </div>
