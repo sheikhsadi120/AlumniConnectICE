@@ -698,6 +698,12 @@ def _build_email_html(subject, preheader, message, cta_text='Visit AlumniConnect
     escaped_preheader = str(preheader or '')
     escaped_body = str(message or '').replace('\n', '<br>')
     escaped_cta = str(cta_text or 'Visit AlumniConnect')
+    unsubscribe_href = config.MAIL_UNSUBSCRIBE_URL or (f"mailto:{config.MAIL_UNSUBSCRIBE_EMAIL}?subject=unsubscribe" if config.MAIL_UNSUBSCRIBE_EMAIL else '')
+    footer_lines = [
+        str(config.MAIL_FOOTER_TEXT or ''),
+        f"Reply contact: {config.MAIL_REPLY_TO}" if config.MAIL_REPLY_TO else '',
+    ]
+    footer_html = '<br>'.join([line for line in footer_lines if line])
     base_url = 'https://alumni-connect-ice-frontend.vercel.app'
     return f"""
     <html>
@@ -705,6 +711,12 @@ def _build_email_html(subject, preheader, message, cta_text='Visit AlumniConnect
             <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:24px 10px;\">
                 <tr>
                     <td align=\"center\">
+                            <tr>
+                                <td style="padding:0 26px 24px;color:#7b6898;font-size:12px;line-height:1.7;border-top:1px solid #f0e6fb;">
+                                    <div style="padding-top:14px;">{footer_html}</div>
+                                    {f'<div style="margin-top:8px;"><a href="{unsubscribe_href}" style="color:#6b3f9a;">Unsubscribe</a></div>' if unsubscribe_href else ''}
+                                </td>
+                            </tr>
                         <table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ecdffb;\">
                             <tr>
                                 <td style=\"padding:20px 26px;background:linear-gradient(135deg,#4f1c78,#a4508b);color:white;\">
@@ -750,13 +762,24 @@ def _normalize_recipient_emails(raw_recipients):
 def _normalize_plain_content(subject, preheader, message):
     blocks = [str(subject or '').strip(), str(preheader or '').strip(), str(message or '').strip()]
     filtered = [b for b in blocks if b]
-    return "\n\n".join(filtered) + "\n"
+    tail_parts = [str(config.MAIL_FOOTER_TEXT or '').strip()]
+    if config.MAIL_REPLY_TO:
+        tail_parts.append(f"Reply: {config.MAIL_REPLY_TO}")
+    if config.MAIL_UNSUBSCRIBE_EMAIL:
+        tail_parts.append(f"Unsubscribe: mailto:{config.MAIL_UNSUBSCRIBE_EMAIL}?subject=unsubscribe")
+    tail = "\n".join([p for p in tail_parts if p])
+    joined = "\n\n".join(filtered)
+    if tail:
+        joined = f"{joined}\n\n{tail}" if joined else tail
+    return joined + "\n"
 
 
 def _mail_metadata_headers():
     headers = {
         'Precedence': 'bulk',
         'X-Auto-Response-Suppress': 'All',
+        'List-ID': config.MAIL_LIST_ID,
+        'Feedback-ID': config.MAIL_FEEDBACK_ID,
     }
 
     unsubscribe_parts = []
