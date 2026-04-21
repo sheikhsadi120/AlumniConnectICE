@@ -185,9 +185,17 @@ export default function StudentDashboard() {
   const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
   const [isCompactDirectory, setIsCompactDirectory] = useState(() => window.innerWidth <= 900)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [imagePreview, setImagePreview] = useState(null)
   const selectedAlumniPastJobs = useMemo(() => getAlumniPastJobs(selectedAlumni), [selectedAlumni])
 
   const profileAvatarUrl = useMemo(() => resolveAvatarUrl(profile), [profile])
+
+  const openImagePreview = (src, altText = 'Profile image') => {
+    if (!src) return
+    setImagePreview({ src, altText })
+  }
+
+  const closeImagePreview = () => setImagePreview(null)
 
   useEffect(() => {
     setAvatarLoadFailed(false)
@@ -638,7 +646,7 @@ export default function StudentDashboard() {
               )}
             </div>
             {(profileAvatarUrl && !avatarLoadFailed)
-              ? <img src={profileAvatarUrl} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
+              ? <img src={profileAvatarUrl} alt={profile.name} className="ad-topbar-avatar" style={{objectFit:'cover',cursor:'zoom-in'}} onError={() => setAvatarLoadFailed(true)} onClick={() => openImagePreview(profileAvatarUrl, profile.name)} />
               : <div className="ad-topbar-avatar">{profile.name[0]}</div>
             }
             <div className="ad-topbar-info">
@@ -869,7 +877,7 @@ export default function StudentDashboard() {
               </div>
               <div className="ad-profile-card">
                 {(profileAvatarUrl && !avatarLoadFailed)
-                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar" style={{objectFit:'cover',cursor:'zoom-in'}} onError={() => setAvatarLoadFailed(true)} onClick={() => openImagePreview(profileAvatarUrl, profile.name)} />
                   : <div className="ad-profile-avatar">{profile.name[0]}</div>
                 }
                 <div className="ad-profile-details">
@@ -1017,7 +1025,7 @@ export default function StudentDashboard() {
                         boxShadow:'0 3px 10px rgba(95,44,130,0.22)',
                       }}>
                         {resolveAvatarUrl(a)
-                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={(e) => { e.stopPropagation(); openImagePreview(resolveAvatarUrl(a), a.name) }} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -1162,7 +1170,7 @@ export default function StudentDashboard() {
                         boxShadow:'0 3px 10px rgba(26,110,181,0.22)',
                       }}>
                         {resolveAvatarUrl(a)
-                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                          ? <img src={resolveAvatarUrl(a)} alt={a.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={() => openImagePreview(resolveAvatarUrl(a), a.name)} />
                           : a.name[0].toUpperCase()
                         }
                       </div>
@@ -1220,7 +1228,7 @@ export default function StudentDashboard() {
               </div>
               <div className="ad-profile-card big">
                 {(profileAvatarUrl && !avatarLoadFailed)
-                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover'}} onError={() => setAvatarLoadFailed(true)} />
+                  ? <img src={profileAvatarUrl} alt={profile.name} className="ad-profile-avatar large" style={{objectFit:'cover',cursor:'zoom-in'}} onError={() => setAvatarLoadFailed(true)} onClick={() => openImagePreview(profileAvatarUrl, profile.name)} />
                   : <div className="ad-profile-avatar large">{profile.name[0]}</div>
                 }
                 {!editMode ? (
@@ -1694,6 +1702,31 @@ export default function StudentDashboard() {
         </div>
       </div>
 
+      {imagePreview && (
+        <div
+          style={{position:'fixed',inset:0,background:'rgba(10, 6, 24, 0.84)',zIndex:1300,display:'flex',alignItems:'center',justifyContent:'center',padding:20,backdropFilter:'blur(3px)'}}
+          onClick={closeImagePreview}
+        >
+          <div
+            style={{position:'relative',maxWidth:'min(92vw, 760px)',maxHeight:'90vh',display:'flex',alignItems:'center',justifyContent:'center'}}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closeImagePreview}
+              style={{position:'absolute',top:-44,right:0,width:34,height:34,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.45)',background:'rgba(255,255,255,0.16)',color:'white',fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}
+              aria-label="Close image preview"
+            >
+              ✖
+            </button>
+            <img
+              src={imagePreview.src}
+              alt={imagePreview.altText}
+              style={{maxWidth:'100%',maxHeight:'90vh',objectFit:'contain',borderRadius:16,boxShadow:'0 16px 48px rgba(0,0,0,0.45)'}}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ══ ALUMNI PROFILE MODAL ══ */}
       {selectedAlumni && (
         <div
@@ -1726,7 +1759,7 @@ export default function StudentDashboard() {
                 marginTop:-48,overflow:'hidden',boxShadow:'0 6px 24px rgba(95,44,130,0.25)',
               }}>
                 {resolveAvatarUrl(selectedAlumni)
-                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                  ? <img src={resolveAvatarUrl(selectedAlumni)} alt={selectedAlumni.name} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in'}} onClick={() => openImagePreview(resolveAvatarUrl(selectedAlumni), selectedAlumni.name)} />
                   : selectedAlumni.name[0].toUpperCase()
                 }
               </div>
