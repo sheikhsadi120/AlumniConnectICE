@@ -1,0 +1,162 @@
+.login-section {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10px 20px 80px;
+  background: linear-gradient(135deg, #1a3a52, #1a3a52);
+  min-height: 80vh;
+  color: white;
+}
+
+.login-card {
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(15px);
+  padding: 40px 30px;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  text-align: center;
+}
+
+.login-card h2 {
+  font-size: 28px;
+  margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.login-card label { font-weight: 500; text-align: left; }
+
+.login-card input {
+  padding: 12px 15px;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+}
+
+.login-card input:focus {
+  border: 2px solid #D4A574;
+  background-color: rgba(255,255,255,0.2);
+}
+
+.login-card input[readonly] {
+  background-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-weight: 600;
+  cursor: not-allowed;
+  border: 1.5px solid rgba(212, 165, 116, 0.5);
+}
+
+.login-card .btn-primary {
+  background: white;
+  color: #1a3a52;
+  font-weight: 600;
+  padding: 12px;
+  border-radius: 25px;
+  border: none;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: 0.3s;
+  display: block;
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.login-card .btn-primary:hover {
+  background: #D4A574;
+  color: #1a3a52;
+}
+
+.login-card .register-text { margin-top: 15px; font-size: 14px; }
+.login-card .register-text a { color: #D4A574; text-decoration: underline; }
+
+.login-card .forgot-password-row {
+  margin-top: -6px;
+}
+
+.login-card .forgot-password-link {
+  color: #E8B86F;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.login-card .forgot-password-link:hover {
+  color: #fff;
+}
+
+.login-card .back-home { margin-top: 20px; }
+.login-card .back-home a { color: white; text-decoration: underline; font-size: 14px; }
+.login-card .back-home a:hover { color: #D4A574; }
+
+@media (max-width: 768px) {
+  .login-section {
+    padding: 8px 12px 42px;
+    min-height: auto;
+  }
+
+  .login-card {
+    max-width: 100%;
+    padding: 26px 18px;
+    border-radius: 16px;
+  }
+
+  .login-card h2 {
+    font-size: 23px;
+    margin-bottom: 20px;
+  }
+
+  .login-card form {
+    gap: 12px;
+  }
+
+  .login-card .btn-primary {
+    margin-top: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 22px 14px;
+  }
+
+  .login-card h2 {
+    font-size: 21px;
+  }
+
+  .login-card input {
+    font-size: 16px;
+    padding: 11px 12px;
+  }
+
+  .login-card label,
+  .login-card .register-text,
+  .login-card .back-home a {
+    font-size: 13px;
+  }
+}
+
+/* Pending message */
+.pending-msg {
+  margin-top: 20px;
+  background: rgba(255,255,255,0.15);
+  border: 1.5px solid rgba(255,255,255,0.4);
+  border-radius: 15px;
+  padding: 20px 15px;
+  text-align: center;
+}
+
+.pending-msg .pending-icon { font-size: 36px; margin-bottom: 10px; }
+.pending-msg h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.pending-msg p { font-size: 14px; opacity: 0.9; line-height: 1.6; }

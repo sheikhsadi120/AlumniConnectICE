@@ -1,0 +1,18 @@
+{
+  "explorer.sortOrder": "type",
+  "explorer.compactFolders": false,
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "app.py": "config.py, migrate.py, schema.sql, requirements.txt",
+    "package.json": "package-lock.json, vite.config.js, index.html",
+    "App.jsx": "main.jsx",
+    "AdminDashboard.jsx": "admin.css",
+    "AlumniDashboard.jsx": "alumni-dashboard.css",
+    "AdminLogin.jsx": "login.css",
+    "AlumniLogin.jsx": "login.css",
+    "StudentLogin.jsx": "login.css",
+    "StudentRegister.jsx": "login.css",
+    "AlumniRegister.jsx": "login.css"
+  }
+}
