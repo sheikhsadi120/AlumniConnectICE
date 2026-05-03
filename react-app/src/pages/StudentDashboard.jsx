@@ -89,6 +89,7 @@ export default function StudentDashboard() {
   const navigate  = useNavigate()
   const location  = useLocation()
   const activeViewRef = useRef('dashboard')
+  const profileReturnTo = `${location.pathname}${location.search}`
 
   const formatEventSchedule = (ev) => [ev?.date, ev?.time].filter(Boolean).join(' · ')
 
@@ -1096,7 +1097,7 @@ export default function StudentDashboard() {
                     }}
                     onMouseEnter={e => e.currentTarget.style.background='#f5eeff'}
                     onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#fdfbff'}
-                    onClick={() => navigate(`/profile/${a.id}`, { state: { profile: { ...a, past_jobs: getAlumniPastJobs(a) } } })}
+                    onClick={() => navigate(`/profile/${a.id}`, { state: { profile: { ...a, past_jobs: getAlumniPastJobs(a) }, returnTo: profileReturnTo } })}
                   >
                     {/* # */}
                     <div style={{textAlign:isCompactDirectory ? 'left' : 'center',fontSize:12,fontWeight:600,color:'#d0c0e8',marginBottom:isCompactDirectory ? 8 : 0}}>#{idx + 1}</div>
@@ -1161,7 +1162,7 @@ export default function StudentDashboard() {
                         display:'flex',alignItems:'center',gap:5,
                         boxShadow:'0 3px 10px rgba(95,44,130,0.28)',
                         fontFamily:'Inter,sans-serif',letterSpacing:'0.2px',
-                      }} onClick={() => navigate(`/profile/${a.id}`, { state: { profile: { ...a, past_jobs: getAlumniPastJobs(a) } } })}>
+                      }} onClick={() => navigate(`/profile/${a.id}`, { state: { profile: { ...a, past_jobs: getAlumniPastJobs(a) }, returnTo: profileReturnTo } })}>
                         <i className="fa-solid fa-eye" style={{fontSize:10}}></i> View Profile
                       </button>
                     </div>

@@ -37,7 +37,16 @@ export default function ProfileViewPage() {
     { key: 'website', icon: 'fa-solid fa-globe', value: profile.website, label: 'Website' },
   ]
 
-  const handleBack = () => navigate(-1)
+  const handleBack = () => {
+    const returnTo = location.state?.returnTo
+
+    if (returnTo) {
+      navigate(returnTo, { replace: true })
+      return
+    }
+
+    navigate(-1)
+  }
 
   useEffect(() => {
     let cancelled = false
